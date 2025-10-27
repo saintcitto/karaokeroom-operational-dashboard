@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ref, onValue } from 'firebase/database';
-import { db } from '../firebaseconfig';
+import { db, ref, onValue } from '../firebaseConfig';
 
 export default function MonitorView() {
   const [bookings, setBookings] = useState([]);
