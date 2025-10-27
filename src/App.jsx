@@ -5,7 +5,7 @@ import KTVErrorBoundary from './components/KTVErrorBoundary';
 import SidebarForm from './components/SidebarForm';
 import BookingGrid from './components/BookingGrid';
 import ExpiredModal from './components/ExpiredModal';
-import { db, ref, set, onValue, remove } from './firebaseConfig';
+import { db, ref, set, onValue, remove, update } from './firebaseConfig';
 
 export default function App() {
   const [bookings, setBookings] = useState([]);
@@ -30,13 +30,15 @@ export default function App() {
           endTime: new Date(b.endTime),
         }));
         setBookings(bookingsArray);
-        localStorage.setItem('bookings', JSON.stringify(bookingsArray));
+
+        const expiredNow = bookingsArray.find(b => b.expired === true);
+        if (expiredNow) startAlarm();
+        else stopAlarm();
       } else {
         setBookings([]);
-        localStorage.removeItem('bookings');
+        stopAlarm();
       }
     });
-
     return () => unsubscribe();
   }, []);
 
@@ -70,9 +72,10 @@ export default function App() {
   }, []);
 
   const addBooking = (newBooking) => {
-    setBookings(prev => [...prev, newBooking]);
+    const bookingWithFlag = { ...newBooking, expired: false };
+    setBookings(prev => [...prev, bookingWithFlag]);
     set(ref(db, 'bookings/' + newBooking.id), {
-      ...newBooking,
+      ...bookingWithFlag,
       startTime: newBooking.startTime.toISOString(),
       endTime: newBooking.endTime.toISOString(),
     });
@@ -84,11 +87,9 @@ export default function App() {
   };
 
   const handleExpire = useCallback((booking) => {
-    if (!expiredBooking) {
-      setExpiredBooking(booking);
-      startAlarm();
-    }
-  }, [expiredBooking, startAlarm]);
+    update(ref(db, 'bookings/' + booking.id), { expired: true });
+    setExpiredBooking(booking);
+  }, []);
 
   const handleCompleteSession = useCallback((bookingId) => {
     stopAlarm();
@@ -106,6 +107,8 @@ export default function App() {
     removeBooking(booking.id);
   }, [stopAlarm]);
 
+  const activeRoomNames = useMemo(() => bookings.map(b => b.room), [bookings]);
+
   const bookingStats = useMemo(() => {
     const stats = { active: 0, warning: 0, expired: 0 };
     (bookings || []).forEach(booking => {
@@ -117,12 +120,10 @@ export default function App() {
     return stats;
   }, [bookings, now]);
 
-  const activeRoomNames = useMemo(() => bookings.map(b => b.room), [bookings]);
-
   return (
     <KTVErrorBoundary>
       <div className="flex flex-col md:flex-row h-screen bg-gray-900 text-white font-sans">
-        <aside className="w-full md:w-1/3 lg:w-1/4 h-auto md:h-screen bg-gray-800 shadow-lg overflow-y-auto" style={{ scrollbarGutter: 'stable' }}>
+        <aside className="w-full md:w-1/3 lg:w-1/4 h-auto md:h-screen bg-gray-800 shadow-lg overflow-y-auto">
           <SidebarForm
             activeRoomNames={activeRoomNames}
             onAddBooking={addBooking}

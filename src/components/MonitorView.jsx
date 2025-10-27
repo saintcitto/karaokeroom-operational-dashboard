@@ -1,8 +1,39 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { db, ref, onValue } from '../firebaseConfig';
+import { Synth, Loop, Transport } from 'tone';
 
 export default function MonitorView() {
   const [bookings, setBookings] = useState([]);
+  const alarmRef = useRef(null);
+
+  const startAlarm = useCallback(() => {
+    try {
+      if (!alarmRef.current) {
+        const synth = new Synth().toDestination();
+        const loop = new Loop(time => {
+          synth.triggerAttackRelease("C5", "8n", time);
+        }, "1.5s").start(0);
+        alarmRef.current = loop;
+      }
+      if (Transport.state !== 'started') {
+        setTimeout(() => Transport.start(), 100);
+      }
+    } catch (e) {
+      console.error("Gagal memainkan alarm (monitor):", e);
+    }
+  }, []);
+
+  const stopAlarm = useCallback(() => {
+    if (alarmRef.current) {
+      alarmRef.current.stop();
+      alarmRef.current.dispose();
+      alarmRef.current = null;
+    }
+    if (Transport.state === 'started') {
+      Transport.stop();
+      Transport.position = 0;
+    }
+  }, []);
 
   useEffect(() => {
     const bookingsRef = ref(db, 'bookings');
@@ -15,13 +46,18 @@ export default function MonitorView() {
           endTime: new Date(b.endTime),
         }));
         setBookings(bookingsArray);
+
+        const expiredNow = bookingsArray.find(b => b.expired === true);
+        if (expiredNow) startAlarm();
+        else stopAlarm();
       } else {
         setBookings([]);
+        stopAlarm();
       }
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [startAlarm, stopAlarm]);
 
   return (
     <div className="min-h-screen bg-gray-900 text-white p-6">
@@ -71,10 +107,6 @@ export default function MonitorView() {
                 <p className="mt-2 text-sm">
                   <span className="font-semibold">Durasi:</span>{' '}
                   {Math.round((b.endTime - b.startTime) / 60000)} menit
-                </p>
-                <p className="mt-1 text-sm">
-                  <span className="font-semibold">Tarif:</span>{' '}
-                  Rp {b.tarif.toLocaleString('id-ID')} / jam
                 </p>
                 <p className="mt-1 text-sm font-semibold text-pink-400">
                   Total: Rp {b.totalPrice.toLocaleString('id-ID')}
