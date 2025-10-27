@@ -5,47 +5,41 @@ import KTVErrorBoundary from './components/KTVErrorBoundary';
 import SidebarForm from './components/SidebarForm';
 import BookingGrid from './components/BookingGrid';
 import ExpiredModal from './components/ExpiredModal';
+import { db, ref, set, onValue, remove } from './firebaseConfig';
 
 export default function App() {
   const [bookings, setBookings] = useState([]);
-  const [hasLoaded, setHasLoaded] = useState(false);
   const [now, setNow] = useState(new Date());
   const [expiredBooking, setExpiredBooking] = useState(null);
   const [formPrefill, setFormPrefill] = useState(null);
   const alarmRef = useRef(null);
 
-  // Update waktu tiap detik
   useEffect(() => {
     const timerId = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timerId);
   }, []);
 
-  // Load dari localStorage
   useEffect(() => {
-    const savedBookings = localStorage.getItem('bookings');
-    if (savedBookings) {
-      try {
-        const parsed = JSON.parse(savedBookings).map(b => ({
+    const bookingsRef = ref(db, 'bookings');
+    const unsubscribe = onValue(bookingsRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const bookingsArray = Object.values(data).map(b => ({
           ...b,
           startTime: new Date(b.startTime),
           endTime: new Date(b.endTime),
         }));
-        setBookings(parsed);
-      } catch (err) {
-        console.error("❌ Gagal parsing bookings:", err);
+        setBookings(bookingsArray);
+        localStorage.setItem('bookings', JSON.stringify(bookingsArray));
+      } else {
+        setBookings([]);
+        localStorage.removeItem('bookings');
       }
-    }
-    setHasLoaded(true);
+    });
+
+    return () => unsubscribe();
   }, []);
 
-  // Simpan ke localStorage setelah data berhasil dimuat
-  useEffect(() => {
-    if (hasLoaded) {
-      localStorage.setItem('bookings', JSON.stringify(bookings));
-    }
-  }, [bookings, hasLoaded]);
-
-  // --- Alarm Logic ---
   const startAlarm = useCallback(() => {
     try {
       if (!alarmRef.current) {
@@ -75,13 +69,18 @@ export default function App() {
     }
   }, []);
 
-  // --- Booking Logic ---
   const addBooking = (newBooking) => {
     setBookings(prev => [...prev, newBooking]);
+    set(ref(db, 'bookings/' + newBooking.id), {
+      ...newBooking,
+      startTime: newBooking.startTime.toISOString(),
+      endTime: newBooking.endTime.toISOString(),
+    });
   };
 
   const removeBooking = (bookingId) => {
     setBookings(prev => prev.filter(b => b.id !== bookingId));
+    remove(ref(db, 'bookings/' + bookingId));
   };
 
   const handleExpire = useCallback((booking) => {
@@ -107,8 +106,6 @@ export default function App() {
     removeBooking(booking.id);
   }, [stopAlarm]);
 
-  const activeRoomNames = useMemo(() => bookings.map(b => b.room), [bookings]);
-
   const bookingStats = useMemo(() => {
     const stats = { active: 0, warning: 0, expired: 0 };
     (bookings || []).forEach(booking => {
@@ -120,7 +117,8 @@ export default function App() {
     return stats;
   }, [bookings, now]);
 
-  // --- Render ---
+  const activeRoomNames = useMemo(() => bookings.map(b => b.room), [bookings]);
+
   return (
     <KTVErrorBoundary>
       <div className="flex flex-col md:flex-row h-screen bg-gray-900 text-white font-sans">
