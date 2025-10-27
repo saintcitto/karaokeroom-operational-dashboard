@@ -8,6 +8,7 @@ import ExpiredModal from './components/ExpiredModal';
 
 export default function App() {
   const [bookings, setBookings] = useState([]);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [now, setNow] = useState(new Date());
   const [expiredBooking, setExpiredBooking] = useState(null);
   const [formPrefill, setFormPrefill] = useState(null);
@@ -18,18 +19,45 @@ export default function App() {
     return () => clearInterval(timerId);
   }, []);
 
-  const startAlarm = useCallback(() => {
-  if (!alarmRef.current) {
-    const synth = new Synth().toDestination();
-    const loop = new Loop(time => {
-      synth.triggerAttackRelease("C5", "8n", time);
-    }, "1.5s").start(0);
-    alarmRef.current = loop;
+  useEffect(() => {
+  const savedBookings = localStorage.getItem('bookings');
+  if (savedBookings) {
+    try {
+      const parsed = JSON.parse(savedBookings).map(b => ({
+        ...b,
+        startTime: new Date(b.startTime),
+        endTime: new Date(b.endTime),
+      }));
+      setBookings(parsed);
+    } catch (err) {
+      console.error("❌ Gagal parsing bookings:", err);
+    }
   }
-  if (Transport.state !== 'started') {
-    Transport.start();
-  }
+  setHasLoaded(true);
 }, []);
+
+  useEffect(() => {
+    if (hasLoaded) {
+      localStorage.setItem('bookings', JSON.stringify(bookings));
+    }
+  }, [bookings, hasLoaded]);
+
+  const startAlarm = useCallback(() => {
+    try {
+      if (!alarmRef.current) {
+        const synth = new Synth().toDestination();
+        const loop = new Loop(time => {
+          synth.triggerAttackRelease("C5", "8n", time);
+        }, "1.5s").start(0);
+        alarmRef.current = loop;
+      }
+      if (Transport.state !== 'started') {
+        setTimeout(() => Transport.start(), 100);
+      }
+    } catch (e) {
+      console.error("Gagal memainkan alarm:", e);
+    }
+  }, []);
 
   const stopAlarm = useCallback(() => {
     if (alarmRef.current) {
