@@ -12,9 +12,7 @@ const firebaseConfig = {
   measurementId: "G-HMTFSDEWX8"
 };
 
-// Inisialisasi Firebase
 const app = initializeApp(firebaseConfig);
 export const db = getDatabase(app);
 
-// Ekspor fungsi database
 export { ref, set, onValue, remove, update };
