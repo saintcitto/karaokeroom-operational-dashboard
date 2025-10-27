@@ -14,34 +14,38 @@ export default function App() {
   const [formPrefill, setFormPrefill] = useState(null);
   const alarmRef = useRef(null);
 
+  // Update waktu tiap detik
   useEffect(() => {
     const timerId = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timerId);
   }, []);
 
+  // Load dari localStorage
   useEffect(() => {
-  const savedBookings = localStorage.getItem('bookings');
-  if (savedBookings) {
-    try {
-      const parsed = JSON.parse(savedBookings).map(b => ({
-        ...b,
-        startTime: new Date(b.startTime),
-        endTime: new Date(b.endTime),
-      }));
-      setBookings(parsed);
-    } catch (err) {
-      console.error("❌ Gagal parsing bookings:", err);
+    const savedBookings = localStorage.getItem('bookings');
+    if (savedBookings) {
+      try {
+        const parsed = JSON.parse(savedBookings).map(b => ({
+          ...b,
+          startTime: new Date(b.startTime),
+          endTime: new Date(b.endTime),
+        }));
+        setBookings(parsed);
+      } catch (err) {
+        console.error("❌ Gagal parsing bookings:", err);
+      }
     }
-  }
-  setHasLoaded(true);
-}, []);
+    setHasLoaded(true);
+  }, []);
 
+  // Simpan ke localStorage setelah data berhasil dimuat
   useEffect(() => {
     if (hasLoaded) {
       localStorage.setItem('bookings', JSON.stringify(bookings));
     }
   }, [bookings, hasLoaded]);
 
+  // --- Alarm Logic ---
   const startAlarm = useCallback(() => {
     try {
       if (!alarmRef.current) {
@@ -71,6 +75,7 @@ export default function App() {
     }
   }, []);
 
+  // --- Booking Logic ---
   const addBooking = (newBooking) => {
     setBookings(prev => [...prev, newBooking]);
   };
@@ -115,6 +120,7 @@ export default function App() {
     return stats;
   }, [bookings, now]);
 
+  // --- Render ---
   return (
     <KTVErrorBoundary>
       <div className="flex flex-col md:flex-row h-screen bg-gray-900 text-white font-sans">
