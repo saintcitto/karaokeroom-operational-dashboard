@@ -8,6 +8,7 @@ import ExpiredModal from "./components/ExpiredModal";
 import HistoryReportDashboard from "./components/HistoryReportDashboard";
 import UserLogin from "./components/UserLogin";
 import { db, ref, set, onValue, remove, update, push } from "./firebaseConfig";
+import { onAuthStateChanged } from "firebase/auth";
 
 const ROLES = {
   ADMIN: "admin",
@@ -41,6 +42,19 @@ export default function App() {
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
   }, [currentUser]);
+
+  useEffect(() => {
+  if (currentUser === "Baya Ganteng") {
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      if (firebaseUser) {
+        console.log("✅ Firebase Admin Auth aktif:", firebaseUser.email);
+      } else {
+        console.warn("⚠️ Admin belum login ke Firebase Auth");
+      }
+    });
+    return () => unsubscribe();
+  }
+}, [currentUser]);
 
   useEffect(() => {
     const bookingsRef = ref(db, "bookings");
