@@ -11,10 +11,11 @@ import { db, ref, set, onValue, remove, update } from './firebaseConfig';
 
 export default function App() {
   const [bookings, setBookings] = useState([]);
-  const [historyData, setHistoryData] = useState([]);
+  const [history, setHistory] = useState([]);
   const [now, setNow] = useState(new Date());
   const [expiredBooking, setExpiredBooking] = useState(null);
   const [formPrefill, setFormPrefill] = useState(null);
+  const [viewMode, setViewMode] = useState('active');
   const alarmRef = useRef(null);
 
   useEffect(() => {
@@ -44,15 +45,6 @@ export default function App() {
     });
     return () => unsubscribe();
   }, []);
-
-  useEffect(() => {
-    const savedHistory = localStorage.getItem('historyData');
-    if (savedHistory) setHistoryData(JSON.parse(savedHistory));
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem('historyData', JSON.stringify(historyData));
-  }, [historyData]);
 
   const startAlarm = useCallback(() => {
     try {
@@ -104,11 +96,11 @@ export default function App() {
   }, []);
 
   const handleCompleteSession = useCallback((bookingId) => {
-    stopAlarm();
-    const finishedBooking = bookings.find(b => b.id === bookingId);
-    if (finishedBooking) {
-      setHistoryData(prev => [...prev, { ...finishedBooking, finishedAt: new Date() }]);
+    const completed = bookings.find(b => b.id === bookingId);
+    if (completed) {
+      setHistory(prev => [...prev, completed]);
     }
+    stopAlarm();
     removeBooking(bookingId);
     setExpiredBooking(null);
   }, [bookings, stopAlarm]);
@@ -146,21 +138,33 @@ export default function App() {
             formPrefill={formPrefill}
             onClearPrefill={() => setFormPrefill(null)}
           />
+          <div className="p-4 border-t border-gray-700">
+            <button
+              onClick={() => setViewMode(viewMode === 'active' ? 'history' : 'active')}
+              className="w-full py-2 bg-blue-600 hover:bg-blue-700 rounded-md font-medium transition-colors"
+            >
+              {viewMode === 'active' ? '📊 Lihat Data Historis' : '⬅️ Kembali ke Pemesanan'}
+            </button>
+          </div>
         </aside>
 
-        <main className="w-full md:w-2/3 lg:w-3/4 h-screen bg-gray-800/50 overflow-y-auto">
-          <BookingGrid
-            bookings={bookings}
-            now={now}
-            onExpire={handleExpire}
-            onCancelBooking={removeBooking}
-            stats={bookingStats}
-          />
-
-          <div className="p-6 space-y-10">
-            <HistoryTable history={historyData} />
-            <HistoryReport history={historyData} />
-          </div>
+        <main className="w-full md:w-2/3 lg:w-3/4 h-screen overflow-y-auto bg-gray-800/50 p-4">
+          {viewMode === 'active' ? (
+            <BookingGrid
+              bookings={bookings}
+              now={now}
+              onExpire={handleExpire}
+              onCancelBooking={removeBooking}
+              stats={bookingStats}
+            />
+          ) : (
+            <>
+              <HistoryReport history={history} />
+              <div className="mt-6">
+                <HistoryTable history={history} />
+              </div>
+            </>
+          )}
         </main>
 
         {expiredBooking && (
