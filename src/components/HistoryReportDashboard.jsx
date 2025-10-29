@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { Card, CardContent } from "./components/ui/card";
+import { Card, CardContent } from "./ui/card";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
 export default function HistoryReportDashboard({ history = [] }) {
