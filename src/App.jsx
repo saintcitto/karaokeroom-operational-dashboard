@@ -44,24 +44,20 @@ export default function App() {
 
   useEffect(() => {
     const bookingsRef = ref(db, "bookings");
-    const unsubscribe = onValue(
-      bookingsRef,
-      (snapshot) => {
-        const data = snapshot.val();
-        if (!data) return setBookings([]);
-        const parsed = Object.entries(data)
-          .map(([id, v]) => ({
-            id,
-            ...v,
-            startTime: new Date(v.startTime),
-            endTime: new Date(v.endTime),
-          }))
-          .filter((b) => b.startTime && b.endTime);
-        setBookings(parsed);
-      },
-      () => setBookings([])
-    );
-    return () => unsubscribe();
+    const unsub = onValue(bookingsRef, (snapshot) => {
+      const data = snapshot.val();
+      if (!data) return setBookings([]);
+      const parsed = Object.entries(data)
+        .map(([id, v]) => ({
+          id,
+          ...v,
+          startTime: new Date(v.startTime),
+          endTime: new Date(v.endTime),
+        }))
+        .filter((b) => b.startTime && b.endTime);
+      setBookings(parsed);
+    });
+    return () => unsub();
   }, []);
 
   useEffect(() => {
@@ -69,8 +65,7 @@ export default function App() {
     const historyRef = ref(db, "history");
     const unsub = onValue(historyRef, (snapshot) => {
       const data = snapshot.val() || {};
-      const arr = Object.entries(data).map(([id, v]) => ({ id, ...v }));
-      setHistory(arr);
+      setHistory(Object.entries(data).map(([id, v]) => ({ id, ...v })));
     });
     return () => unsub();
   }, [role]);
@@ -78,11 +73,7 @@ export default function App() {
   useEffect(() => {
     if (!bookings.length) return;
     const expiredNow = bookings.find(
-      (b) =>
-        !b.expired &&
-        b.endTime instanceof Date &&
-        b.endTime <= now &&
-        !expireLockRef.current[b.id]
+      (b) => !b.expired && b.endTime instanceof Date && b.endTime <= now && !expireLockRef.current[b.id]
     );
     if (expiredNow) {
       expireLockRef.current[expiredNow.id] = true;
@@ -104,33 +95,24 @@ export default function App() {
     setRole(USER_ROLES[user] || null);
   };
 
-  const startAlarm = useCallback(async () => {
+  const startAlarm = useCallback(() => {
     try {
-      await ToneStart();
-      if (ToneContext.state !== "running") await ToneContext.resume();
-
+      if (ToneContext.state !== "running") ToneContext.resume();
       if (!alarmRef.current) {
         const filter = new Filter(800, "lowpass").toDestination();
         const synth = new PolySynth().connect(filter);
         const lfo = new LFO("2n", 400, 1600).start();
         lfo.connect(filter.frequency);
-
         const playPattern = () => {
           const t = ToneContext.currentTime + 0.1;
           synth.triggerAttackRelease(["A5", "E6"], "8n", t);
           synth.triggerAttackRelease(["C6", "G5"], "8n", t + 0.4);
         };
-
         Transport.scheduleRepeat(playPattern, "1.2s", "+0.1");
-        if (Transport.state !== "started") {
-          Transport.start("+0.1");
-        }
-
+        if (Transport.state !== "started") Transport.start("+0.1");
         alarmRef.current = { synth, filter, lfo };
       }
-    } catch (err) {
-      console.error("Alarm start error:", err);
-    }
+    } catch {}
   }, []);
 
   const stopAlarm = useCallback(() => {
@@ -148,8 +130,7 @@ export default function App() {
 
   const addBooking = (newBooking) => {
     if (!newBooking?.id) return;
-    const path = ref(db, "bookings/" + newBooking.id);
-    set(path, {
+    set(ref(db, "bookings/" + newBooking.id), {
       ...newBooking,
       startTime: newBooking.startTime.toISOString(),
       endTime: newBooking.endTime.toISOString(),
@@ -162,9 +143,7 @@ export default function App() {
       await remove(ref(db, "bookings/" + bookingId));
       delete expireLockRef.current[bookingId];
       if (expiredBooking?.id === bookingId) setExpiredBooking(null);
-    } catch (err) {
-      console.error("Failed to remove booking:", err);
-    }
+    } catch {}
   };
 
   const handleExpire = useCallback(
@@ -184,11 +163,11 @@ export default function App() {
 
   const handleCompleteSession = useCallback(
     async (bookingId) => {
-      const finishedBooking = bookings.find((b) => b.id === bookingId);
-      if (finishedBooking) {
+      const finished = bookings.find((b) => b.id === bookingId);
+      if (finished) {
         const historyRef = push(ref(db, "history"));
         await set(historyRef, {
-          ...finishedBooking,
+          ...finished,
           finishedAt: new Date().toISOString(),
           handledBy: currentUser,
         });
@@ -217,7 +196,7 @@ export default function App() {
   );
 
   if (!currentUser)
-    return <UserLogin onLogin={handleLogin} footerName={"sweet cherry pie 🍰"} />;
+    return <UserLogin onLogin={handleLogin} footerName="sweet cherry pie 🍰" />;
 
   const safeBookings = Array.isArray(bookings) ? bookings : [];
   const safeHistory = Array.isArray(history) ? history : [];
@@ -282,10 +261,7 @@ export default function App() {
           </div>
           <div className="transition-all duration-500 ease-in-out p-6">
             {showHistory && canViewHistory ? (
-              <HistoryReportDashboard
-                history={safeHistory}
-                onClose={() => setShowHistory(false)}
-              />
+              <HistoryReportDashboard history={safeHistory} onClose={() => setShowHistory(false)} />
             ) : (
               <BookingGrid
                 bookings={safeBookings}
