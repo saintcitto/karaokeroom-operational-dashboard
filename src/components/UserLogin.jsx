@@ -2,7 +2,7 @@ import React, { useEffect } from "react";
 import { start as ToneStart, context as ToneContext } from "tone";
 import { motion, useAnimation } from "framer-motion";
 
-export default function UserLogin({ onLogin }) {
+function UserLogin({ onLogin }) {
   const controls = useAnimation();
 
   useEffect(() => {
@@ -38,7 +38,7 @@ export default function UserLogin({ onLogin }) {
       await ToneStart();
       await ToneContext.resume();
     } catch {}
-    onLogin(user);
+    onLogin(user.name);
   };
 
   return (
@@ -51,7 +51,7 @@ export default function UserLogin({ onLogin }) {
         {users.map((user) => (
           <button
             key={user.id}
-            onClick={() => unlockAudio(user.name)}
+            onClick={() => unlockAudio(user)}
             className="px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg hover:bg-pink-600 hover:border-pink-500 text-sm font-medium text-white transition-all duration-200 shadow-lg hover:shadow-pink-500/20"
           >
             {user.name}
@@ -60,7 +60,7 @@ export default function UserLogin({ onLogin }) {
         ))}
       </div>
 
-      {/* ✨ Footer animasi super smooth */}
+      {/* ✨ Footer animasi */}
       <motion.footer
         animate={controls}
         className="absolute bottom-10 w-full flex flex-col items-center justify-center text-gray-400 select-none"
@@ -97,7 +97,6 @@ export default function UserLogin({ onLogin }) {
             🍰
           </motion.span>
         </motion.div>
-
         <motion.div
           initial={{ opacity: 0 }}
           animate={{
@@ -115,3 +114,5 @@ export default function UserLogin({ onLogin }) {
     </div>
   );
 }
+
+export default UserLogin;
