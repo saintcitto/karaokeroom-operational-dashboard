@@ -94,15 +94,6 @@ export default function App() {
     expireLockRef.current = {};
   }, [currentUser]);
 
-  useEffect(() => {
-    const stuckExpired = bookings.find(
-      (b) => b.expired && !expiredBooking && !expireLockRef.current[b.id]
-    );
-    if (stuckExpired) {
-      removeBooking(stuckExpired.id);
-    }
-  }, [bookings, expiredBooking]);
-
   const handleLogin = async (user) => {
     try {
       await ToneStart();
