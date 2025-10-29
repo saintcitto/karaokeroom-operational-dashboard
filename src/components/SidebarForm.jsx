@@ -1,182 +1,150 @@
-import React, { useState, useEffect } from 'react';
-import * as Tone from 'tone';
-import { AlertTriangle, Plus } from 'lucide-react';
-import { ROOM_NAMES, DURATION_MINUTES } from '../data/constants';
-import { formatTimeForInput, calculateTotalPriceWithPromo } from '../utils/helpers';
+import React, { useState } from 'react';
+import { formatTimeForInput } from '../utils/helpers';
 
-const SidebarForm = ({ activeRoomNames, onAddBooking, formPrefill, onClearPrefill }) => {
+export default function SidebarForm({ activeRoomNames, onAddBooking, formPrefill, onClearPrefill }) {
   const [room, setRoom] = useState('');
-  const [startTime, setStartTime] = useState('');
+  const [startTime, setStartTime] = useState(formatTimeForInput(new Date()));
   const [durationHours, setDurationHours] = useState(1);
   const [durationMinutes, setDurationMinutes] = useState(0);
-  const [people, setPeople] = useState('');
-  const [error, setError] = useState('');
+  const [people, setPeople] = useState(0);
+  const [note, setNote] = useState('');
 
-  useEffect(() => {
-    const unlock = () => {
-      if (Tone.context.state !== 'running') {
-        Tone.start().then(() => window.removeEventListener('click', unlock));
-      }
-    };
-    window.addEventListener('click', unlock);
-    return () => window.removeEventListener('click', unlock);
-  }, []);
+  const handleAddBooking = () => {
+    if (!room) return;
+    const start = new Date();
+    const [hour, minute] = startTime.split(':').map(Number);
+    start.setHours(hour, minute, 0, 0);
+    const end = new Date(start.getTime() + (durationHours * 60 + durationMinutes) * 60000);
 
-  useEffect(() => {
-    if (formPrefill) {
-      setRoom(formPrefill.room || '');
-      setStartTime(formPrefill.startTime || '');
-    }
-  }, [formPrefill]);
+    const totalHours = durationHours + durationMinutes / 60;
+    const pricePerHour = 60000;
+    const basePrice = totalHours * pricePerHour;
+    const extraPeople = people > 10 ? 5000 : 0;
+    const promo =
+      totalHours >= 3
+        ? 'Gratis 1 jam'
+        : totalHours >= 2
+        ? 'Gratis 30 menit'
+        : null;
+    const totalPrice = basePrice + extraPeople;
 
-  const handleStartTimeNow = () => {
-    const now = new Date();
-    setStartTime(formatTimeForInput(now));
-  };
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    setError('');
-
-    if (!room) return setError('Silakan pilih ruangan.');
-    if (!startTime) return setError('Silakan tentukan jam masuk.');
-
-    const durationTotalMinutes = (Number(durationHours) * 60) + Number(durationMinutes);
-    if (durationTotalMinutes <= 0) return setError('Durasi harus lebih dari 0 menit.');
-
-    const [startH, startM] = startTime.split(':').map(Number);
-    const startTimeDate = new Date();
-    startTimeDate.setHours(startH, startM, 0, 0);
-    const endTimeDate = new Date(startTimeDate.getTime() + durationTotalMinutes * 60000);
-
-    const priceData = calculateTotalPriceWithPromo(startTimeDate, durationTotalMinutes, Number(people) || 0);
-
-    const newBooking = {
-      id: `booking_${Date.now()}`,
+    onAddBooking({
+      id: `${room}-${Date.now()}`,
       room,
-      startTime: startTimeDate,
-      endTime: endTimeDate,
-      durationInMinutes: durationTotalMinutes,
-      tarif: priceData.tarif,
-      hargaWaktu: priceData.hargaWaktu,
-      biayaTambahan: priceData.biayaTambahan,
-      totalPrice: priceData.total,
-      people: Number(people) || 0,
-      promoNote: priceData.promoNote,
-    };
+      startTime: start,
+      endTime: end,
+      people,
+      totalPrice,
+      promo,
+      note,
+      expired: false,
+    });
 
-    onAddBooking(newBooking);
-    onClearPrefill();
     setRoom('');
-    setStartTime('');
     setDurationHours(1);
     setDurationMinutes(0);
-    setPeople('');
+    setPeople(0);
+    setNote('');
   };
 
   return (
-    <form onSubmit={handleSubmit} className="p-6 space-y-4">
-      <h2 className="text-xl font-bold text-white mb-4">Buat Pemesanan Baru</h2>
+    <div className="p-4 space-y-4">
+      <h2 className="text-lg font-bold mb-2 text-gray-100">Buat Pemesanan Baru</h2>
 
       <div>
-        <label htmlFor="room" className="block text-sm font-medium text-gray-300 mb-1">Pilih Ruangan</label>
+        <label className="text-sm text-gray-300">Pilih Ruangan</label>
         <select
-          id="room"
           value={room}
           onChange={(e) => setRoom(e.target.value)}
-          className="w-full bg-gray-700 border border-gray-600 text-white rounded-md p-2"
+          className="w-full mt-1 p-2 bg-gray-700 text-white rounded"
         >
           <option value="">-- Pilih Ruangan --</option>
-          {ROOM_NAMES.map(name => (
-            <option key={name} value={name} disabled={activeRoomNames.includes(name)}>
-              {name} {activeRoomNames.includes(name) ? '(Aktif)' : ''}
+          {[...Array(10)].map((_, i) => (
+            <option
+              key={i}
+              value={`KTV ${i + 1}`}
+              disabled={activeRoomNames.includes(`KTV ${i + 1}`)}
+            >
+              KTV {i + 1}
             </option>
           ))}
         </select>
       </div>
 
       <div>
-        <label htmlFor="start-time" className="block text-sm font-medium text-gray-300 mb-1">Jam Masuk</label>
-        <div className="flex gap-2">
+        <label className="text-sm text-gray-300">Jam Masuk</label>
+        <div className="flex items-center space-x-2">
           <input
             type="time"
-            id="start-time"
             value={startTime}
             onChange={(e) => setStartTime(e.target.value)}
-            className="w-full bg-gray-700 border border-gray-600 text-white rounded-md p-2"
+            className="flex-1 p-2 bg-gray-700 text-white rounded"
           />
           <button
-            type="button"
-            onClick={handleStartTimeNow}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors whitespace-nowrap"
+            onClick={() => setStartTime(formatTimeForInput(new Date()))}
+            className="bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded text-sm"
           >
             Sekarang
           </button>
         </div>
       </div>
 
-      <div>
-        <label className="block text-sm font-medium text-gray-300 mb-1">Durasi</label>
-        <div className="flex gap-4">
-          <input
-            type="number"
-            value={durationHours}
-            onChange={(e) => setDurationHours(Number(e.target.value))}
-            min="0"
-            className="w-1/2 bg-gray-700 border border-gray-600 text-white rounded-md p-2"
-          />
-          <select
-            value={durationMinutes}
-            onChange={(e) => setDurationMinutes(Number(e.target.value))}
-            className="w-1/2 bg-gray-700 border border-gray-600 text-white rounded-md p-2"
-          >
-            {DURATION_MINUTES.map(min => (
-              <option key={min} value={min}>{min}</option>
-            ))}
-          </select>
+      <div className="flex space-x-2">
+        <div className="flex-1">
+          <label className="text-sm text-gray-300">Durasi</label>
+          <div className="flex space-x-2">
+            <input
+              type="number"
+              value={durationHours}
+              onChange={(e) => setDurationHours(Number(e.target.value))}
+              className="w-full p-2 bg-gray-700 text-white rounded"
+            />
+            <span className="text-gray-400 self-center">Jam</span>
+            <input
+              type="number"
+              value={durationMinutes}
+              onChange={(e) => setDurationMinutes(Number(e.target.value))}
+              className="w-full p-2 bg-gray-700 text-white rounded"
+            />
+            <span className="text-gray-400 self-center">Menit</span>
+          </div>
         </div>
       </div>
 
       <div>
-        <label htmlFor="people" className="block text-sm font-medium text-gray-300 mb-1">Jumlah Orang</label>
+        <label className="text-sm text-gray-300">Jumlah Orang</label>
         <input
           type="number"
-          id="people"
-          placeholder="Masukkan jumlah tamu"
           value={people}
-          onChange={(e) => setPeople(e.target.value)}
-          min="0"
-          className="w-full bg-gray-700 border border-gray-600 text-white rounded-md p-2"
+          onChange={(e) => setPeople(Number(e.target.value))}
+          className="w-full mt-1 p-2 bg-gray-700 text-white rounded"
+          placeholder="Masukkan jumlah tamu"
         />
-        <small className="text-gray-400 text-xs">
-          Tambahan Rp5.000 jika tamu lebih dari 10 orang (tidak dikali jumlah orang, berlaku semua jam).
-        </small>
       </div>
 
-      {error && (
-        <div className="flex items-center gap-2 text-sm text-red-400 bg-red-900/50 p-3 rounded-md">
-          <AlertTriangle size={16} />
-          <span>{error}</span>
-        </div>
+      {formPrefill?.note && (
+        <p className="text-xs text-blue-300 italic border-l-2 border-blue-400 pl-2">
+          {formPrefill.note}
+        </p>
       )}
 
       <button
-        type="submit"
-        className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-green-600 text-white font-bold rounded-md hover:bg-green-700 transition-colors"
+        onClick={handleAddBooking}
+        className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2 rounded"
       >
-        <Plus size={20} />
-        Tambah Pemesanan
+        + Tambah Pemesanan
       </button>
 
-      {formPrefill?.note && (
-        <p className="text-xs text-yellow-400 italic mt-2">{formPrefill.note}</p>
-      )}
+      <a
+        href="/history"
+        className="block w-full text-center bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 rounded"
+      >
+        📘 Lihat Data Historis
+      </a>
 
-      <p className="text-xs text-gray-400 mt-2">
+      <div className="text-xs text-gray-400 border-t border-gray-700 pt-3">
         Promo otomatis: 30 menit gratis untuk durasi ≥ 2 jam, dan 1 jam gratis untuk durasi ≥ 3 jam.
-      </p>
-    </form>
+      </div>
+    </div>
   );
-};
-
-export default SidebarForm;
+}
