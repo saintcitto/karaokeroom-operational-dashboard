@@ -2,40 +2,27 @@ import React, { useEffect, useState } from 'react';
 import { Clock, Users, Tag, XCircle } from 'lucide-react';
 
 export default function BookingCard({ booking, now, onExpire, onCancel }) {
-  // ✅ Tambahan: pastikan startTime dan endTime valid Date
-  const startTime = booking?.startTime ? new Date(booking.startTime) : null;
-  const endTime = booking?.endTime ? new Date(booking.endTime) : null;
-
-  // Kalau datanya rusak, tampilkan pesan
-  if (!startTime || !endTime || isNaN(startTime) || isNaN(endTime)) {
-    return (
-      <div className="rounded-xl p-5 border border-red-500 bg-gradient-to-br from-red-900/40 to-gray-900 shadow-md">
-        <h3 className="text-lg font-bold text-red-400 mb-2">{booking?.room || 'Unknown Room'}</h3>
-        <p className="text-sm text-gray-400">❌ Data waktu tidak valid.</p>
-        <button
-          onClick={() => onCancel(booking.id)}
-          className="mt-3 px-3 py-2 bg-red-600 hover:bg-red-700 text-sm rounded-lg"
-        >
-          Hapus Data
-        </button>
-      </div>
-    );
+  if (!booking || !booking.startTime || !booking.endTime) {
+    onCancel(booking?.id);
+    return null;
   }
 
-  // ✅ Baru lanjut logika normal
-  const [remaining, setRemaining] = useState(Math.max(0, endTime - now));
+  const startTime = new Date(booking.startTime);
+  const endTime = new Date(booking.endTime);
+  if (isNaN(startTime) || isNaN(endTime)) {
+    onCancel(booking.id);
+    return null;
+  }
 
+  const [remaining, setRemaining] = useState(Math.max(0, endTime - now));
   useEffect(() => {
-    const timer = setInterval(() => {
-      setRemaining(Math.max(0, endTime - new Date()));
-    }, 1000);
+    const timer = setInterval(() => setRemaining(Math.max(0, endTime - new Date())), 1000);
     return () => clearInterval(timer);
   }, [endTime]);
 
   const totalDuration = endTime - startTime;
   const progress = totalDuration > 0 ? 100 - (remaining / totalDuration) * 100 : 0;
   const isExpired = remaining <= 0;
-
   const promoLabel =
     booking.promo === 'Gratis 1 jam'
       ? '🎁 +60 Menit Gratis'
@@ -48,10 +35,9 @@ export default function BookingCard({ booking, now, onExpire, onCancel }) {
     const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
     const seconds = totalSeconds % 60;
-    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(
-      2,
-      '0'
-    )}:${String(seconds).padStart(2, '0')}`;
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(
+      seconds
+    ).padStart(2, '0')}`;
   };
 
   return (
@@ -62,7 +48,6 @@ export default function BookingCard({ booking, now, onExpire, onCancel }) {
           : 'border-gray-700 bg-gradient-to-br from-gray-800 to-gray-900'
       }`}
     >
-      {/* Header */}
       <div className="flex justify-between items-center mb-3">
         <h3 className="text-xl font-bold text-white tracking-wide">{booking.room}</h3>
         {promoLabel && (
@@ -72,7 +57,6 @@ export default function BookingCard({ booking, now, onExpire, onCancel }) {
         )}
       </div>
 
-      {/* Info Section */}
       <div className="space-y-2 text-sm text-gray-300">
         <p className="flex items-center gap-2">
           <Clock size={16} className="text-blue-400" />
@@ -91,7 +75,6 @@ export default function BookingCard({ booking, now, onExpire, onCancel }) {
         </p>
       </div>
 
-      {/* Timer */}
       <div className="mt-4">
         <div className="flex justify-between items-center text-xs mb-1">
           <span className="text-gray-400">Sisa Waktu</span>
@@ -111,7 +94,6 @@ export default function BookingCard({ booking, now, onExpire, onCancel }) {
         </div>
       </div>
 
-      {/* Footer */}
       <div className="flex justify-between items-center mt-5">
         <div>
           <p className="text-sm text-gray-400">Subtotal:</p>
@@ -128,7 +110,6 @@ export default function BookingCard({ booking, now, onExpire, onCancel }) {
         </button>
       </div>
 
-      {/* Overlay Expired */}
       {isExpired && (
         <div className="absolute inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center rounded-2xl">
           <div className="text-center">
