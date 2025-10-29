@@ -1,17 +1,41 @@
-import React, { useState } from "react";
-import { start as ToneStart } from "tone";
+import React, { useState, useEffect } from "react";
+import { start as ToneStart, context as ToneContext } from "tone";
 
 export default function UserLogin({ onLogin }) {
-  const [unlocked, setUnlocked] = useState(false);
+  const [audioUnlocked, setAudioUnlocked] = useState(false);
 
-  const handleUnlock = async () => {
-    try {
-      await ToneStart(); // 🔓 Unlock AudioContext
-      setUnlocked(true);
-    } catch (err) {
-      console.warn("Audio unlock failed:", err);
-    }
-  };
+  useEffect(() => {
+    const tryUnlockAudio = async () => {
+      try {
+        await ToneStart();
+        await ToneContext.resume();
+        const buffer = ToneContext.createBufferSource();
+        const gain = ToneContext.createGain();
+        buffer.buffer = ToneContext.createBuffer(1, 1, ToneContext.sampleRate);
+        buffer.connect(gain);
+        gain.connect(ToneContext.destination);
+        buffer.start(0);
+        setAudioUnlocked(true);
+        console.log("✅ AudioContext unlocked globally.");
+      } catch (err) {
+        console.warn("Audio unlock failed:", err);
+      }
+    };
+
+    const gestureUnlock = () => {
+      tryUnlockAudio();
+      window.removeEventListener("click", gestureUnlock);
+      window.removeEventListener("touchstart", gestureUnlock);
+    };
+
+    window.addEventListener("click", gestureUnlock);
+    window.addEventListener("touchstart", gestureUnlock);
+
+    return () => {
+      window.removeEventListener("click", gestureUnlock);
+      window.removeEventListener("touchstart", gestureUnlock);
+    };
+  }, []);
 
   const users = [
     { name: "Baya Ganteng", role: "Admin" },
@@ -22,20 +46,20 @@ export default function UserLogin({ onLogin }) {
     { name: "Zahlul", role: "Petugas Karaoke" },
   ];
 
-  if (!unlocked) {
+  if (!audioUnlocked) {
     return (
       <div className="h-screen flex flex-col items-center justify-center bg-gray-900 text-white">
         <h1 className="text-2xl font-bold mb-6 text-pink-400 tracking-wide">
-          🎤 KTV Operational Dashboard
+        🎤 Karaoke Sonia Operational Dashboard
         </h1>
         <p className="text-sm text-gray-400 mb-4 text-center w-72">
-          Klik tombol di bawah untuk mengaktifkan sistem audio
+          Klik di mana saja untuk mengaktifkan sistem audio 🎧
         </p>
         <button
-          onClick={handleUnlock}
+          onClick={() => setAudioUnlocked(true)}
           className="px-5 py-3 bg-gradient-to-r from-fuchsia-500 to-pink-600 hover:from-fuchsia-600 hover:to-pink-700 text-white font-semibold rounded-lg shadow-md transition-all duration-300"
         >
-          🔊 Aktifkan Suara
+          🔊 Aktifkan Audio
         </button>
         <footer className="absolute bottom-6 text-sm text-gray-500">
           sweet cherry pie 🍰
@@ -47,7 +71,7 @@ export default function UserLogin({ onLogin }) {
   return (
     <div className="h-screen flex flex-col items-center justify-center bg-gray-900 text-white">
       <h1 className="text-2xl font-bold mb-6 text-pink-400 tracking-wide">
-        🎤 Sonia Karaoke Operational Dashboard
+        🎤 Karaoke Sonia Operational Dashboard
       </h1>
 
       <div className="grid grid-cols-2 gap-4 w-80">
