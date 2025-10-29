@@ -162,11 +162,13 @@ export default function App() {
             </button>
           </div>
           <SidebarForm
-            activeRoomNames={bookings.map(b => b.room)}
+            activeRoomNames={safeBookings.map(b => b.room)}
             onAddBooking={addBooking}
             formPrefill={formPrefill}
             onClearPrefill={() => setFormPrefill(null)}
-          />
+            onShowHistory={() => setShowHistory(true)}
+            currentUser={currentUser}
+            />
         </aside>
         <main className="w-full md:w-2/3 lg:w-3/4 h-screen overflow-y-auto bg-gray-800/50">
           <BookingGrid bookings={bookings} now={now} onExpire={handleExpire} onCancelBooking={removeBooking} />
