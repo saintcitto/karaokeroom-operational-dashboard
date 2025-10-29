@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from "react";
 
 export default function SidebarForm({
   activeRoomNames,
@@ -11,16 +11,66 @@ export default function SidebarForm({
   const [durationHours, setDurationHours] = useState('');
   const [durationMinutes, setDurationMinutes] = useState('');
   const [people, setPeople] = useState('');
+  const [calculated, setCalculated] = useState(null);
 
-  // Fungsi filter angka biar gak bisa minus & nol
   const sanitizeNumber = (value, allowZero = false) => {
     if (value === '') return '';
-    const cleaned = value.replace(/[^0-9]/g, ''); // hapus semua karakter non-angka
+    const cleaned = value.replace(/[^0-9]/g, '');
     if (cleaned === '') return '';
     const num = Number(cleaned);
     if (!allowZero && num === 0) return '';
     return num;
   };
+
+  useEffect(() => {
+    if (!startTime || (!durationHours && !durationMinutes)) {
+      setCalculated(null);
+      return;
+    }
+
+    const now = new Date();
+    const [hour, minute] = startTime.split(':').map(Number);
+    const start = new Date(now);
+    start.setHours(hour, minute, 0, 0);
+
+    const durH = Number(durationHours) || 0;
+    const durM = Number(durationMinutes) || 0;
+    const totalMinutes = durH * 60 + durM;
+
+    // tarif
+    const startHour = start.getHours();
+    const startMin = start.getMinutes();
+    let rate = 45000;
+    if (startHour > 16 || (startHour === 16 && startMin >= 45)) {
+      rate = 60000;
+    }
+
+    // bonus
+    let bonus = 0;
+    let promo = null;
+    if (durH >= 3) {
+      bonus = 60;
+      promo = "Gratis 1 jam";
+    } else if (durH >= 2) {
+      bonus = 30;
+      promo = "Gratis 30 menit";
+    }
+
+    const paidHours = totalMinutes / 60;
+    const totalPaid = paidHours * rate;
+
+    const totalMinutesDisplay = totalMinutes + bonus;
+    const hours = Math.floor(totalMinutesDisplay / 60);
+    const minutes = totalMinutesDisplay % 60;
+
+    setCalculated({
+      rate,
+      promo,
+      bonus,
+      totalPaid,
+      totalDisplay: `${hours} jam ${minutes ? minutes + ' menit' : ''}`,
+    });
+  }, [startTime, durationHours, durationMinutes]);
 
   const handleAddBooking = () => {
     if (!room || !startTime) return alert('Pilih ruangan dan jam masuk!');
@@ -33,23 +83,25 @@ export default function SidebarForm({
     const [hour, minute] = startTime.split(':').map(Number);
     start.setHours(hour, minute, 0, 0);
 
-    const durHours = Number(durationHours) || 0;
-    const durMinutes = Number(durationMinutes) || 0;
+    const durH = Number(durationHours) || 0;
+    const durM = Number(durationMinutes) || 0;
 
     let bonusMinutes = 0;
-    if (durHours >= 3) bonusMinutes = 60;
-    else if (durHours >= 2) bonusMinutes = 30;
+    if (durH >= 3) bonusMinutes = 60;
+    else if (durH >= 2) bonusMinutes = 30;
 
-    const totalMinutes = durHours * 60 + durMinutes + bonusMinutes;
+    const totalMinutes = durH * 60 + durM + bonusMinutes;
     const end = new Date(start.getTime() + totalMinutes * 60000);
 
-    const totalHours = totalMinutes / 60;
-    const pricePerHour = 60000;
-    const basePrice = totalHours * pricePerHour;
-    const extraPeople = Number(people) > 10 ? 5000 : 0;
+    const startHour = start.getHours();
+    const startMin = start.getMinutes();
+    let rate = 45000;
+    if (startHour > 16 || (startHour === 16 && startMin >= 45)) rate = 60000;
+
+    const paidHours = (durH * 60 + durM) / 60;
+    const totalPrice = paidHours * rate;
     const promo =
-      durHours >= 3 ? 'Gratis 1 jam' : durHours >= 2 ? 'Gratis 30 menit' : '-';
-    const totalPrice = basePrice + extraPeople;
+      durH >= 3 ? "Gratis 1 jam" : durH >= 2 ? "Gratis 30 menit" : "-";
 
     onAddBooking({
       id: `${room}-${Date.now()}`,
@@ -67,6 +119,7 @@ export default function SidebarForm({
     setDurationHours('');
     setDurationMinutes('');
     setPeople('');
+    setCalculated(null);
   };
 
   return (
@@ -116,7 +169,6 @@ export default function SidebarForm({
         </div>
       </div>
 
-      {/* Durasi */}
       <div className="flex space-x-2">
         <div className="flex-1">
           <label className="text-sm text-gray-300">Durasi</label>
@@ -143,7 +195,6 @@ export default function SidebarForm({
         </div>
       </div>
 
-      {/* Jumlah Orang */}
       <div>
         <label className="text-sm text-gray-300">Jumlah Orang</label>
         <input
@@ -155,6 +206,26 @@ export default function SidebarForm({
           placeholder="Masukkan jumlah tamu"
         />
       </div>
+
+      {calculated && (
+        <div className="bg-gray-700/60 rounded-lg p-3 mt-2 text-sm text-gray-100 border border-gray-600">
+          <p>
+            💵 Tarif: <span className="font-semibold">Rp {calculated.rate.toLocaleString()}</span>/jam
+          </p>
+          <p>
+            ⏱ Total waktu: <span className="font-semibold">{calculated.totalDisplay}</span>
+          </p>
+          {calculated.promo && (
+            <p className="text-green-400">🎁 {calculated.promo}</p>
+          )}
+          <p className="mt-1">
+            💰 Estimasi Bayar:{" "}
+            <span className="font-bold text-yellow-400">
+              Rp {calculated.totalPaid.toLocaleString()}
+            </span>
+          </p>
+        </div>
+      )}
 
       <button
         onClick={handleAddBooking}
