@@ -4,7 +4,7 @@ import { AlertTriangle, Plus } from 'lucide-react';
 import { ROOM_NAMES, DURATION_MINUTES } from '../data/constants';
 import { formatTimeForInput, calculateTotalPriceWithPromo } from '../utils/helpers';
 
-const SidebarForm = ({ activeRoomNames, onAddBooking, formPrefill, onClearPrefill }) => {
+const SidebarForm = ({ activeRoomNames, onAddBooking }) => {
   const [room, setRoom] = useState('');
   const [startTime, setStartTime] = useState('');
   const [durationHours, setDurationHours] = useState(1);
@@ -16,7 +16,6 @@ const SidebarForm = ({ activeRoomNames, onAddBooking, formPrefill, onClearPrefil
     const unlock = () => {
       if (Tone.context.state !== 'running') {
         Tone.start().then(() => {
-          console.log('🔊 AudioContext unlocked');
           window.removeEventListener('click', unlock);
         });
       }
@@ -47,7 +46,7 @@ const SidebarForm = ({ activeRoomNames, onAddBooking, formPrefill, onClearPrefil
     startTimeDate.setHours(startH, startM, 0, 0);
     const endTimeDate = new Date(startTimeDate.getTime() + durationTotalMinutes * 60000);
 
-    const priceCalc = calculateTotalPriceWithPromo(startTimeDate, durationTotalMinutes, people);
+    const priceData = calculateTotalPriceWithPromo(startTimeDate, durationTotalMinutes, people);
 
     const newBooking = {
       id: `booking_${Date.now()}`,
@@ -55,16 +54,15 @@ const SidebarForm = ({ activeRoomNames, onAddBooking, formPrefill, onClearPrefil
       startTime: startTimeDate,
       endTime: endTimeDate,
       durationInMinutes: durationTotalMinutes,
-      tarif: priceCalc.tarif,
-      totalPrice: priceCalc.total,
+      tarif: priceData.tarif,
+      hargaWaktu: priceData.hargaWaktu,
+      biayaTambahan: priceData.biayaTambahan,
+      totalPrice: priceData.total,
       people,
-      overCapacityCharge: priceCalc.biayaTambahan,
-      promoApplied: true
+      promoNote: priceData.promoNote,
     };
 
     onAddBooking(newBooking);
-
-    // Reset form
     setRoom('');
     setStartTime('');
     setDurationHours(1);
@@ -76,7 +74,6 @@ const SidebarForm = ({ activeRoomNames, onAddBooking, formPrefill, onClearPrefil
     <form onSubmit={handleSubmit} className="p-6 space-y-4">
       <h2 className="text-xl font-bold text-white mb-4">Buat Pemesanan Baru</h2>
 
-      {/* Pilih Ruangan */}
       <div>
         <label htmlFor="room" className="block text-sm font-medium text-gray-300 mb-1">Pilih Ruangan</label>
         <select
@@ -94,7 +91,6 @@ const SidebarForm = ({ activeRoomNames, onAddBooking, formPrefill, onClearPrefil
         </select>
       </div>
 
-      {}
       <div>
         <label htmlFor="start-time" className="block text-sm font-medium text-gray-300 mb-1">Jam Masuk</label>
         <div className="flex gap-2">
@@ -115,7 +111,6 @@ const SidebarForm = ({ activeRoomNames, onAddBooking, formPrefill, onClearPrefil
         </div>
       </div>
 
-      {}
       <div>
         <label className="block text-sm font-medium text-gray-300 mb-1">Durasi</label>
         <div className="flex gap-4">
@@ -124,7 +119,7 @@ const SidebarForm = ({ activeRoomNames, onAddBooking, formPrefill, onClearPrefil
             <input
               type="number"
               value={durationHours}
-              onChange={(e) => setDurationHours(e.target.value)}
+              onChange={(e) => setDurationHours(Number(e.target.value))}
               min="0"
               className="w-full bg-gray-700 border border-gray-600 text-white rounded-md p-2"
             />
@@ -133,16 +128,17 @@ const SidebarForm = ({ activeRoomNames, onAddBooking, formPrefill, onClearPrefil
             <label className="block text-xs text-gray-400">Menit</label>
             <select
               value={durationMinutes}
-              onChange={(e) => setDurationMinutes(e.target.value)}
+              onChange={(e) => setDurationMinutes(Number(e.target.value))}
               className="w-full bg-gray-700 border border-gray-600 text-white rounded-md p-2"
             >
-              {DURATION_MINUTES.map(min => <option key={min} value={min}>{min}</option>)}
+              {DURATION_MINUTES.map(min => (
+                <option key={min} value={min}>{min}</option>
+              ))}
             </select>
           </div>
         </div>
       </div>
 
-      {}
       <div>
         <label htmlFor="people" className="block text-sm font-medium text-gray-300 mb-1">Jumlah Orang</label>
         <input
@@ -153,7 +149,9 @@ const SidebarForm = ({ activeRoomNames, onAddBooking, formPrefill, onClearPrefil
           min="0"
           className="w-full bg-gray-700 border border-gray-600 text-white rounded-md p-2"
         />
-        <small className="text-gray-400 text-xs">Mulai dari 0. Tambahan Rp5.000 jika lebih dari 10 orang.</small>
+        <small className="text-gray-400 text-xs">
+          Tambahan Rp5.000 jika tamu lebih dari 10 orang (tidak dikali jumlah orang, berlaku semua jam).
+        </small>
       </div>
 
       {error && (
@@ -163,13 +161,16 @@ const SidebarForm = ({ activeRoomNames, onAddBooking, formPrefill, onClearPrefil
         </div>
       )}
 
-      <button type="submit" className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-green-600 text-white font-bold rounded-md hover:bg-green-700 transition-colors">
+      <button
+        type="submit"
+        className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-green-600 text-white font-bold rounded-md hover:bg-green-700 transition-colors"
+      >
         <Plus size={20} />
         Tambah Pemesanan
       </button>
 
       <p className="text-xs text-gray-400 mt-2">
-        Promo 30 menit otomatis berlaku setiap pesanan.
+        Promo otomatis: 30 menit gratis untuk durasi ≥ 2 jam, dan 1 jam gratis untuk durasi ≥ 3 jam.
       </p>
     </form>
   );
