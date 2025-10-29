@@ -5,7 +5,7 @@ import KTVErrorBoundary from './components/KTVErrorBoundary';
 import SidebarForm from './components/SidebarForm';
 import BookingGrid from './components/BookingGrid';
 import ExpiredModal from './components/ExpiredModal';
-import { db, ref, set, onValue, remove, update } from './firebaseConfig';
+import { db, ref, set, onValue, remove, update, push } from './firebaseConfig';
 
 export default function App() {
   const [bookings, setBookings] = useState([]);
@@ -23,21 +23,39 @@ export default function App() {
     const bookingsRef = ref(db, 'bookings');
     const unsubscribe = onValue(bookingsRef, (snapshot) => {
       const data = snapshot.val();
-      if (data) {
-        const bookingsArray = Object.values(data).map(b => ({
+      if (!data) {
+        setBookings([]);
+        stopAlarm();
+        return;
+      }
+      const cleanedData = Object.values(data)
+        .filter(b =>
+          b &&
+          b.startTime &&
+          b.endTime &&
+          !isNaN(new Date(b.startTime)) &&
+          !isNaN(new Date(b.endTime))
+        )
+        .map(b => ({
           ...b,
           startTime: new Date(b.startTime),
           endTime: new Date(b.endTime),
         }));
-        setBookings(bookingsArray);
-
-        const expiredNow = bookingsArray.find(b => b.expired === true);
-        if (expiredNow) startAlarm();
-        else stopAlarm();
-      } else {
-        setBookings([]);
-        stopAlarm();
-      }
+      Object.entries(data).forEach(([key, b]) => {
+        if (
+          !b ||
+          !b.startTime ||
+          !b.endTime ||
+          isNaN(new Date(b.startTime)) ||
+          isNaN(new Date(b.endTime))
+        ) {
+          remove(ref(db, 'bookings/' + key));
+        }
+      });
+      setBookings(cleanedData);
+      const expiredNow = cleanedData.find(b => b.expired === true);
+      if (expiredNow) startAlarm();
+      else stopAlarm();
     });
     return () => unsubscribe();
   }, []);
@@ -86,27 +104,38 @@ export default function App() {
     remove(ref(db, 'bookings/' + bookingId));
   };
 
+  const saveHistory = useCallback(async (booking) => {
+    const historyRef = ref(db, 'history');
+    const newHistoryRef = push(historyRef);
+    await set(newHistoryRef, {
+      ...booking,
+      startTime: booking.startTime.toISOString(),
+      endTime: booking.endTime.toISOString(),
+      savedAt: new Date().toISOString(),
+    });
+  }, []);
+
   const handleExpire = useCallback((booking) => {
     update(ref(db, 'bookings/' + booking.id), { expired: true });
     setExpiredBooking(booking);
   }, []);
 
-  const handleCompleteSession = useCallback((bookingId) => {
+  const handleCompleteSession = useCallback(async (bookingId) => {
     stopAlarm();
+    const finishedBooking = bookings.find(b => b.id === bookingId);
+    if (finishedBooking) await saveHistory(finishedBooking);
     removeBooking(bookingId);
     setExpiredBooking(null);
-  }, [stopAlarm]);
+  }, [bookings, stopAlarm, saveHistory]);
 
   const handleExtendSession = useCallback((booking) => {
     stopAlarm();
     setExpiredBooking(null);
-
     setFormPrefill({
       room: booking.room,
       startTime: formatTimeForInput(booking.endTime),
       note: `Perpanjangan dari sesi sebelumnya (${formatTimeForInput(booking.startTime)} - ${formatTimeForInput(booking.endTime)})`,
     });
-
     removeBooking(booking.id);
   }, [stopAlarm]);
 
