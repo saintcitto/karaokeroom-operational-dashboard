@@ -1,9 +1,11 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { db, ref, onValue } from '../firebaseConfig';
+import { db, ref, onValue, update, remove } from '../firebaseConfig';
 import { Synth, Loop, Transport } from 'tone';
+import { formatCurrency, formatTime } from '../utils/helpers';
 
 export default function MonitorView() {
   const [bookings, setBookings] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const alarmRef = useRef(null);
 
   const startAlarm = useCallback(() => {
@@ -35,16 +37,20 @@ export default function MonitorView() {
     }
   }, []);
 
-  useEffect(() => {
+  const fetchBookings = useCallback(() => {
     const bookingsRef = ref(db, 'bookings');
     const unsubscribe = onValue(bookingsRef, (snapshot) => {
       const data = snapshot.val();
+      setIsLoading(false);
+
       if (data) {
-        const bookingsArray = Object.values(data).map(b => ({
-          ...b,
-          startTime: new Date(b.startTime),
-          endTime: new Date(b.endTime),
-        }));
+        const bookingsArray = Object.values(data)
+          .filter(b => b.startTime && b.endTime && !isNaN(new Date(b.startTime)))
+          .map(b => ({
+            ...b,
+            startTime: new Date(b.startTime),
+            endTime: new Date(b.endTime),
+          }));
         setBookings(bookingsArray);
 
         const expiredNow = bookingsArray.find(b => b.expired === true);
@@ -59,21 +65,51 @@ export default function MonitorView() {
     return () => unsubscribe();
   }, [startAlarm, stopAlarm]);
 
+  useEffect(() => {
+    fetchBookings();
+  }, [fetchBookings]);
+
+  const handleCompleteSession = async (id) => {
+    const confirm = window.confirm("Sesi ini sudah selesai? Tindakan ini akan menghapus data dari daftar aktif.");
+    if (!confirm) return;
+    await remove(ref(db, 'bookings/' + id));
+  };
+
+  const handleExtendSession = async (booking) => {
+    const confirm = window.confirm(`Perpanjang ${booking.room} selama 1 jam lagi?`);
+    if (!confirm) return;
+    const newEndTime = new Date(booking.endTime.getTime() + 60 * 60000);
+    await update(ref(db, 'bookings/' + booking.id), {
+      endTime: newEndTime.toISOString(),
+    });
+    alert(`Sesi ${booking.room} berhasil diperpanjang hingga ${formatTime(newEndTime)}.`);
+  };
+
   return (
     <div className="min-h-screen bg-gray-900 text-white p-6">
       <header className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center">
         <h1 className="text-2xl sm:text-3xl font-bold text-pink-400 tracking-wide">
-          🎧 Monitor Pemesanan Aktif
+          🎧 Monitor & Kasir Karaoke
         </h1>
-        <a
-          href="/"
-          className="mt-3 sm:mt-0 text-sm bg-pink-600 hover:bg-pink-700 px-4 py-2 rounded-lg font-semibold transition-all"
-        >
-          Kembali ke Dashboard
-        </a>
+        <div className="flex gap-2 mt-3 sm:mt-0">
+          <a
+            href="/"
+            className="text-sm bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg font-semibold transition-all"
+          >
+            ⬅️ Dashboard
+          </a>
+          <button
+            onClick={fetchBookings}
+            className="text-sm bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-lg font-semibold transition-all"
+          >
+            🔄 Refresh Data
+          </button>
+        </div>
       </header>
 
-      {bookings.length === 0 ? (
+      {isLoading ? (
+        <p className="text-gray-400 text-center mt-20">Memuat data...</p>
+      ) : bookings.length === 0 ? (
         <p className="text-gray-400 text-center mt-20">
           Tidak ada pemesanan aktif saat ini.
         </p>
@@ -82,9 +118,8 @@ export default function MonitorView() {
           {bookings.map((b) => {
             const now = new Date();
             const isExpired = now > b.endTime;
-            const isWarning =
-              !isExpired &&
-              (b.endTime - now <= 10 * 60 * 1000);
+            const timeLeft = Math.max(0, (b.endTime - now) / 60000);
+            const isWarning = !isExpired && timeLeft <= 10;
 
             return (
               <div
@@ -95,22 +130,46 @@ export default function MonitorView() {
                   : 'border-green-500 bg-green-800/20'}
                 `}
               >
-                <h2 className="text-xl font-bold mb-2">{b.room}</h2>
+                <div className="flex justify-between items-center mb-2">
+                  <h2 className="text-xl font-bold">{b.room}</h2>
+                  <span className="text-xs bg-gray-700 px-2 py-0.5 rounded-md">
+                    {isExpired ? 'Expired' : isWarning ? 'Akan Habis' : 'Aktif'}
+                  </span>
+                </div>
+
                 <p className="text-sm text-gray-300">
-                  <span className="font-semibold">Masuk:</span>{' '}
-                  {new Date(b.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  ⏱ <span className="font-semibold">Sisa Waktu:</span>{' '}
+                  {isExpired ? 'Waktu Habis' : `${Math.floor(timeLeft)} menit`}
                 </p>
                 <p className="text-sm text-gray-300">
-                  <span className="font-semibold">Keluar:</span>{' '}
-                  {new Date(b.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  🕓 <span className="font-semibold">Masuk:</span> {formatTime(b.startTime)}
                 </p>
-                <p className="mt-2 text-sm">
-                  <span className="font-semibold">Durasi:</span>{' '}
-                  {Math.round((b.endTime - b.startTime) / 60000)} menit
+                <p className="text-sm text-gray-300">
+                  ⏰ <span className="font-semibold">Keluar:</span> {formatTime(b.endTime)}
+                </p>
+                <p className="text-sm mt-2">
+                  👥 <span className="font-semibold">Jumlah Orang:</span> {b.people || 0}
                 </p>
                 <p className="mt-1 text-sm font-semibold text-pink-400">
-                  Total: Rp {b.totalPrice.toLocaleString('id-ID')}
+                  💵 Total: {formatCurrency(b.totalPrice || 0)}
                 </p>
+
+                <div className="mt-3 flex gap-2">
+                  {!isExpired && (
+                    <button
+                      onClick={() => handleExtendSession(b)}
+                      className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-1 rounded-md text-sm transition-colors"
+                    >
+                      ➕ Perpanjang 1 Jam
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleCompleteSession(b.id)}
+                    className="flex-1 bg-red-700 hover:bg-red-800 text-white py-1 rounded-md text-sm transition-colors"
+                  >
+                    ✅ Selesaikan
+                  </button>
+                </div>
               </div>
             );
           })}
