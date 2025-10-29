@@ -138,10 +138,22 @@ export default function App() {
     });
   };
 
-  const removeBooking = (bookingId) => {
-    if (!bookingId) return;
-    remove(ref(db, "bookings/" + bookingId));
-  };
+  const removeBooking = async (bookingId) => {
+  if (!bookingId) return;
+  try {
+    await remove(ref(db, "bookings/" + bookingId));
+    delete expireLockRef.current[bookingId];
+    if (expiredBooking?.id === bookingId) setExpiredBooking(null);
+  } catch (err) {
+    console.error("Failed to remove booking:", err);
+  }
+};
+
+useEffect(() => {
+  expireLockRef.current = {};
+}, [currentUser]);
+
+jadi gini dawg?
 
   const handleExpire = useCallback(
     (booking) => {
