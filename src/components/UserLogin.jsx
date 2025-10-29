@@ -1,5 +1,4 @@
-import React, { useEffect } from "react";
-import * as Tone from "tone";
+import React from "react";
 
 export default function UserLogin({ onLogin }) {
   const users = [
@@ -11,90 +10,28 @@ export default function UserLogin({ onLogin }) {
     { name: "Zahlul", role: "Petugas Karaoke" },
   ];
 
-  useEffect(() => {
-    document.body.style.background =
-      "radial-gradient(circle at center, #191926 0%, #0c0c14 100%)";
-    document.body.style.transition = "background 0.8s ease-in-out";
-    return () => {
-      document.body.style.background = "";
-    };
-  }, []);
-
-  const handleLoginClick = async (user) => {
-    try {
-      // aktifkan audio context dulu (wajib untuk iOS/Safari/Chrome policy)
-      await Tone.start();
-
-      // buat suara "click synth"
-      const synth = new Tone.Synth().toDestination();
-      synth.triggerAttackRelease("A5", "16n");
-
-      // delay biar ada efek UX pas klik
-      setTimeout(() => {
-        onLogin(user);
-      }, 250);
-    } catch (err) {
-      console.warn("Audio init failed:", err);
-      onLogin(user); // fallback tanpa suara
-    }
-  };
-
   return (
-    <div className="flex items-center justify-center h-screen relative overflow-hidden">
-      {/* background ambient */}
-      <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-blue-900/10 via-fuchsia-900/10 to-indigo-900/10 blur-3xl"></div>
+    <div className="h-screen flex flex-col items-center justify-center bg-gray-900 text-white">
+      <h1 className="text-2xl font-bold mb-6 text-pink-400 tracking-wide">
+        🎤 KTV Operational Dashboard
+      </h1>
 
-      {/* main login card */}
-      <div className="relative bg-gray-800/90 backdrop-blur-md p-8 rounded-2xl shadow-2xl w-[22rem] border border-gray-700/60 text-center animate-fadeIn">
-        <h1 className="text-3xl font-extrabold mb-4 bg-gradient-to-r from-fuchsia-400 via-pink-400 to-purple-400 text-transparent bg-clip-text drop-shadow-lg">
-          Karaoke Room Dashboard
-        </h1>
-        <p className="text-gray-400 text-sm mb-6 tracking-wide">
-          Pilih akun untuk masuk sistem operasional
-        </p>
-
-        <div className="space-y-3">
-          {users.map((user) => (
-            <button
-              key={user.name}
-              onClick={() => handleLoginClick(user.name)}
-              className="w-full py-2.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-fuchsia-600 
-              hover:from-fuchsia-600 hover:to-pink-600 text-white rounded-lg font-semibold tracking-wide 
-              shadow-md hover:shadow-xl hover:scale-[1.03] active:scale-[0.97] 
-              transition-all duration-300 ease-out focus:ring-2 focus:ring-pink-500/50"
-            >
-              {user.name}
-              <span className="text-xs text-gray-200 font-normal"> ({user.role})</span>
-            </button>
-          ))}
-        </div>
-
-        <p className="mt-8 text-xs text-pink-400 italic tracking-wider opacity-80">
-          sweet cherry pie 🍰
-        </p>
+      <div className="grid grid-cols-2 gap-4 w-80">
+        {users.map((user) => (
+          <button
+            key={user.name}
+            onClick={() => onLogin(user.name)} // ← INI WAJIB ADA
+            className="px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg hover:bg-pink-600 hover:border-pink-500 text-sm font-medium text-white transition-all duration-200 shadow-lg hover:shadow-pink-500/20"
+          >
+            {user.name}
+            <div className="text-[11px] text-gray-400">{user.role}</div>
+          </button>
+        ))}
       </div>
 
-      {/* subtle glow */}
-      <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-tr from-fuchsia-500/5 to-blue-600/5 animate-gradientMove"></div>
-
-      <style>{`
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(20px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .animate-fadeIn {
-          animation: fadeIn 0.8s ease-out;
-        }
-        @keyframes gradientMove {
-          0% { background-position: 0% 50%; }
-          50% { background-position: 100% 50%; }
-          100% { background-position: 0% 50%; }
-        }
-        .animate-gradientMove {
-          background-size: 200% 200%;
-          animation: gradientMove 12s ease infinite;
-        }
-      `}</style>
+      <footer className="absolute bottom-6 text-sm text-gray-500">
+        sweet cherry pie 🍰
+      </footer>
     </div>
   );
 }
