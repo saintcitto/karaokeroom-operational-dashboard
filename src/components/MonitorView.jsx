@@ -1,24 +1,54 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { db, ref, onValue, update, remove } from '../firebaseConfig';
-import { Synth, Loop, Transport } from 'tone';
+import { Synth, Loop, Transport, start, context } from 'tone';
 import { formatCurrency, formatTime } from '../utils/helpers';
 
 export default function MonitorView() {
   const [bookings, setBookings] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const alarmRef = useRef(null);
+  const synthRef = useRef(null);
 
-  const startAlarm = useCallback(() => {
+  useEffect(() => {
+    const unlockAudio = async () => {
+      try {
+        await start();
+        if (context.state !== 'running') await context.resume();
+        console.log('🔊 AudioContext unlocked!');
+      } catch (e) {
+        console.error('AudioContext unlock failed:', e);
+      }
+    };
+
+    // cover ALL interaction types (desktop + mobile)
+    ['click', 'touchstart', 'keydown'].forEach(evt => {
+      window.addEventListener(evt, unlockAudio);
+    });
+
+    return () => {
+      ['click', 'touchstart', 'keydown'].forEach(evt => {
+        window.removeEventListener(evt, unlockAudio);
+      });
+    };
+  }, []);
+
+  const startAlarm = useCallback(async () => {
     try {
+      if (document.hidden) return; // don’t play in background tab
+      await start();
+      if (context.state !== 'running') await context.resume();
+
       if (!alarmRef.current) {
-        const synth = new Synth().toDestination();
+        synthRef.current = new Synth().toDestination();
         const loop = new Loop(time => {
-          synth.triggerAttackRelease("C5", "8n", time);
+          synthRef.current.triggerAttackRelease("C5", "8n", time);
         }, "1.5s").start(0);
         alarmRef.current = loop;
       }
+
       if (Transport.state !== 'started') {
-        setTimeout(() => Transport.start(), 100);
+        Transport.start("+0.1");
+        console.log("🚨 Alarm started");
       }
     } catch (e) {
       console.error("Gagal memainkan alarm (monitor):", e);
@@ -26,14 +56,19 @@ export default function MonitorView() {
   }, []);
 
   const stopAlarm = useCallback(() => {
-    if (alarmRef.current) {
-      alarmRef.current.stop();
-      alarmRef.current.dispose();
-      alarmRef.current = null;
-    }
-    if (Transport.state === 'started') {
-      Transport.stop();
-      Transport.position = 0;
+    try {
+      if (alarmRef.current) {
+        alarmRef.current.stop();
+        alarmRef.current.dispose();
+        alarmRef.current = null;
+      }
+      if (Transport.state === 'started') {
+        Transport.stop();
+        Transport.position = 0;
+      }
+      console.log("🔇 Alarm stopped");
+    } catch (e) {
+      console.error("Gagal menghentikan alarm:", e);
     }
   }, []);
 
@@ -45,7 +80,7 @@ export default function MonitorView() {
 
       if (data) {
         const bookingsArray = Object.values(data)
-          .filter(b => b.startTime && b.endTime && !isNaN(new Date(b.startTime)))
+          .filter(b => b.startTime && b.endTime)
           .map(b => ({
             ...b,
             startTime: new Date(b.startTime),
@@ -70,7 +105,7 @@ export default function MonitorView() {
   }, [fetchBookings]);
 
   const handleCompleteSession = async (id) => {
-    const confirm = window.confirm("Sesi ini sudah selesai? Tindakan ini akan menghapus data dari daftar aktif.");
+    const confirm = window.confirm("Sesi ini sudah selesai? Akan dihapus dari daftar aktif.");
     if (!confirm) return;
     await remove(ref(db, 'bookings/' + id));
   };
@@ -82,7 +117,7 @@ export default function MonitorView() {
     await update(ref(db, 'bookings/' + booking.id), {
       endTime: newEndTime.toISOString(),
     });
-    alert(`Sesi ${booking.room} berhasil diperpanjang hingga ${formatTime(newEndTime)}.`);
+    alert(`Sesi ${booking.room} diperpanjang hingga ${formatTime(newEndTime)}.`);
   };
 
   return (
@@ -102,7 +137,7 @@ export default function MonitorView() {
             onClick={fetchBookings}
             className="text-sm bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-lg font-semibold transition-all"
           >
-            🔄 Refresh Data
+            🔄 Refresh
           </button>
         </div>
       </header>
@@ -110,9 +145,7 @@ export default function MonitorView() {
       {isLoading ? (
         <p className="text-gray-400 text-center mt-20">Memuat data...</p>
       ) : bookings.length === 0 ? (
-        <p className="text-gray-400 text-center mt-20">
-          Tidak ada pemesanan aktif saat ini.
-        </p>
+        <p className="text-gray-400 text-center mt-20">Tidak ada pemesanan aktif saat ini.</p>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {bookings.map((b) => {
@@ -124,11 +157,13 @@ export default function MonitorView() {
             return (
               <div
                 key={b.id}
-                className={`p-4 rounded-lg shadow-lg border-2 transition-all
-                  ${isExpired ? 'border-red-500 animate-pulse bg-red-900/40'
-                  : isWarning ? 'border-yellow-400 bg-yellow-800/20'
-                  : 'border-green-500 bg-green-800/20'}
-                `}
+                className={`p-4 rounded-lg shadow-lg border-2 transition-all ${
+                  isExpired
+                    ? 'border-red-500 animate-pulse bg-red-900/40'
+                    : isWarning
+                    ? 'border-yellow-400 bg-yellow-800/20'
+                    : 'border-green-500 bg-green-800/20'
+                }`}
               >
                 <div className="flex justify-between items-center mb-2">
                   <h2 className="text-xl font-bold">{b.room}</h2>
@@ -138,7 +173,7 @@ export default function MonitorView() {
                 </div>
 
                 <p className="text-sm text-gray-300">
-                  ⏱ <span className="font-semibold">Sisa Waktu:</span>{' '}
+                  ⏱ <span className="font-semibold">Sisa:</span>{' '}
                   {isExpired ? 'Waktu Habis' : `${Math.floor(timeLeft)} menit`}
                 </p>
                 <p className="text-sm text-gray-300">
@@ -148,7 +183,7 @@ export default function MonitorView() {
                   ⏰ <span className="font-semibold">Keluar:</span> {formatTime(b.endTime)}
                 </p>
                 <p className="text-sm mt-2">
-                  👥 <span className="font-semibold">Jumlah Orang:</span> {b.people || 0}
+                  👥 <span className="font-semibold">Jumlah:</span> {b.people || 0}
                 </p>
                 <p className="mt-1 text-sm font-semibold text-pink-400">
                   💵 Total: {formatCurrency(b.totalPrice || 0)}
@@ -160,14 +195,14 @@ export default function MonitorView() {
                       onClick={() => handleExtendSession(b)}
                       className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-1 rounded-md text-sm transition-colors"
                     >
-                      ➕ Perpanjang 1 Jam
+                      ➕ Perpanjang
                     </button>
                   )}
                   <button
                     onClick={() => handleCompleteSession(b.id)}
                     className="flex-1 bg-red-700 hover:bg-red-800 text-white py-1 rounded-md text-sm transition-colors"
                   >
-                    ✅ Selesaikan
+                    ✅ Selesai
                   </button>
                 </div>
               </div>
