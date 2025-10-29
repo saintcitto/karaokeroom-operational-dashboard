@@ -103,7 +103,6 @@ export default function App() {
           oscillator: { type: "triangle" },
           envelope: { attack: 0.05, decay: 0.1, sustain: 0.4, release: 0.6 },
         }).toDestination();
-
         const loop = new Loop(
           (time) => {
             synth.triggerAttackRelease("A5", "8n", time);
@@ -111,13 +110,10 @@ export default function App() {
           },
           "1.2s"
         ).start(0);
-
         alarmRef.current = loop;
       }
       if (Transport.state !== "started") Transport.start();
-    } catch (err) {
-      console.warn("Alarm start error:", err);
-    }
+    } catch {}
   }, []);
 
   const stopAlarm = useCallback(() => {
@@ -151,7 +147,7 @@ export default function App() {
       if (!booking?.id) return;
       update(ref(db, "bookings/" + booking.id), { expired: true })
         .then(() => {
-          setExpiredBooking(booking);
+          setExpiredBooking({ ...booking, expired: true });
           startAlarm();
         })
         .catch(() => {
@@ -221,7 +217,6 @@ export default function App() {
               Logout
             </button>
           </div>
-
           {canManageBookings && (
             <SidebarForm
               activeRoomNames={safeBookings.map((b) => b.room)}
@@ -233,7 +228,6 @@ export default function App() {
             />
           )}
         </aside>
-
         <main className="relative w-full md:w-2/3 lg:w-3/4 h-screen overflow-y-auto bg-gray-800/50 transition-all duration-300 ease-in-out">
           <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-3 bg-gray-800/70 backdrop-blur-md border-b border-gray-700">
             <h2 className="text-lg font-semibold tracking-wide text-white">
@@ -261,7 +255,6 @@ export default function App() {
               ) : null}
             </div>
           </div>
-
           <div className="transition-all duration-500 ease-in-out p-6">
             {showHistory && canViewHistory ? (
               <HistoryReportDashboard
@@ -272,18 +265,18 @@ export default function App() {
               <BookingGrid
                 bookings={safeBookings}
                 now={now}
-                onExpire={handleExpire}
+                onExpire={(b) => handleExpire(b)}
                 onCancelBooking={(id) => id && removeBooking(id)}
               />
             )}
           </div>
         </main>
-
         {expiredBooking && (
           <ExpiredModal
+            key={expiredBooking.id}
             booking={expiredBooking}
-            onComplete={handleCompleteSession}
-            onExtend={handleExtendSession}
+            onComplete={(id) => handleCompleteSession(id)}
+            onExtend={(b) => handleExtendSession(b)}
           />
         )}
       </div>
