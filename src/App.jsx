@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { PolySynth, Filter, LFO, Transport, start as ToneStart } from "tone";
+import { PolySynth, Filter, LFO, Transport, start as ToneStart, context as ToneContext } from "tone";
 import { formatTimeForInput } from "./utils/helpers";
 import KTVErrorBoundary from "./components/KTVErrorBoundary";
 import SidebarForm from "./components/SidebarForm";
@@ -105,7 +105,8 @@ export default function App() {
 
   const handleLogin = async (user) => {
     try {
-      await ToneStart(); // unlock audio context at login
+      await ToneStart();
+      await ToneContext.resume();
     } catch {}
     localStorage.setItem("currentUser", user);
     setCurrentUser(user);
@@ -115,25 +116,29 @@ export default function App() {
   const startAlarm = useCallback(async () => {
     try {
       await ToneStart();
+      if (ToneContext.state !== "running") await ToneContext.resume();
+
       if (!alarmRef.current) {
-        const synth = new PolySynth().toDestination();
         const filter = new Filter(800, "lowpass").toDestination();
-        synth.connect(filter);
+        const synth = new PolySynth().connect(filter);
         const lfo = new LFO("2n", 400, 1600).start();
         lfo.connect(filter.frequency);
 
         const playPattern = () => {
-          const now = Tone.now();
-          synth.triggerAttackRelease(["A5", "E6"], "8n", now);
-          synth.triggerAttackRelease(["C6", "G5"], "8n", now + 0.4);
+          const t = ToneContext.currentTime + 0.1;
+          synth.triggerAttackRelease(["A5", "E6"], "8n", t);
+          synth.triggerAttackRelease(["C6", "G5"], "8n", t + 0.4);
         };
 
-        Transport.scheduleRepeat(playPattern, "1.2s");
-        Transport.start();
+        Transport.scheduleRepeat(playPattern, "1.2s", "+0.1");
+        if (Transport.state !== "started") {
+          Transport.start("+0.1");
+        }
+
         alarmRef.current = { synth, filter, lfo };
       }
     } catch (err) {
-      console.warn("Alarm start error:", err);
+      console.error("Alarm start error:", err);
     }
   }, []);
 
