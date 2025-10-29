@@ -9,12 +9,28 @@ import HistoryReportDashboard from "./components/HistoryReportDashboard";
 import UserLogin from "./components/UserLogin";
 import { db, ref, set, onValue, remove, update, push } from "./firebaseConfig";
 
+const ROLES = {
+  ADMIN: "admin",
+  CASHIER: "cashier",
+  STAFF: "staff",
+};
+
+const USER_ROLES = {
+  "Baya Ganteng": ROLES.ADMIN,
+  Ayu: ROLES.CASHIER,
+  Ridho: ROLES.CASHIER,
+  Umi: ROLES.CASHIER,
+  Faisal: ROLES.STAFF,
+  Zahlul: ROLES.STAFF,
+};
+
 export default function App() {
   const [bookings, setBookings] = useState([]);
   const [now, setNow] = useState(new Date());
   const [expiredBooking, setExpiredBooking] = useState(null);
   const [formPrefill, setFormPrefill] = useState(null);
   const [currentUser, setCurrentUser] = useState(localStorage.getItem("currentUser") || "");
+  const [role, setRole] = useState(USER_ROLES[localStorage.getItem("currentUser")] || null);
   const [history, setHistory] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
   const alarmRef = useRef(null);
@@ -26,24 +42,31 @@ export default function App() {
   }, [currentUser]);
 
   useEffect(() => {
-    if (!currentUser) return;
     const bookingsRef = ref(db, "bookings");
-    const unsubscribe = onValue(bookingsRef, (snapshot) => {
-      const data = snapshot.val() || {};
-      const arr = Object.values(data).filter(Boolean);
-      const parsed = arr
-        .filter((b) => b?.startTime && b?.endTime)
-        .map((b) => ({
-          ...b,
-          startTime: new Date(b.startTime),
-          endTime: new Date(b.endTime),
-        }));
-      setBookings(parsed);
-    });
+    const unsubscribe = onValue(
+      bookingsRef,
+      (snapshot) => {
+        const data = snapshot.val();
+        if (!data) return setBookings([]);
+        const parsed = Object.values(data)
+          .filter(Boolean)
+          .map((b) => ({
+            ...b,
+            startTime: new Date(b.startTime),
+            endTime: new Date(b.endTime),
+          }));
+        setBookings(parsed);
+      },
+      (err) => {
+        console.error("Bookings listener error:", err);
+        setBookings([]);
+      }
+    );
     return () => unsubscribe();
-  }, [currentUser]);
+  }, []);
 
   useEffect(() => {
+    if (role !== ROLES.ADMIN) return;
     const historyRef = ref(db, "history");
     const unsub = onValue(historyRef, (snapshot) => {
       const data = snapshot.val() || {};
@@ -51,7 +74,13 @@ export default function App() {
       setHistory(arr);
     });
     return () => unsub();
-  }, []);
+  }, [role]);
+
+  const handleLogin = (user) => {
+    localStorage.setItem("currentUser", user);
+    setCurrentUser(user);
+    setRole(USER_ROLES[user] || null);
+  };
 
   const startAlarm = useCallback(() => {
     try {
@@ -64,7 +93,9 @@ export default function App() {
         alarmRef.current = loop;
       }
       if (Transport.state !== "started") Transport.start();
-    } catch {}
+    } catch (err) {
+      console.warn("Alarm start error:", err);
+    }
   }, []);
 
   const stopAlarm = useCallback(() => {
@@ -76,6 +107,7 @@ export default function App() {
     if (Transport.state === "started") Transport.stop();
   }, []);
 
+  // === CRUD Operations ===
   const addBooking = (newBooking) => {
     if (!newBooking) return;
     const path = ref(db, "bookings/" + newBooking.id);
@@ -131,14 +163,18 @@ export default function App() {
   );
 
   if (!currentUser)
-    return <UserLogin onLogin={(user) => setCurrentUser(user)} />;
+    return <UserLogin onLogin={handleLogin} />;
 
   const safeBookings = Array.isArray(bookings) ? bookings : [];
   const safeHistory = Array.isArray(history) ? history : [];
 
+  const canViewHistory = role === ROLES.ADMIN;
+  const canManageBookings = [ROLES.ADMIN, ROLES.CASHIER, ROLES.STAFF].includes(role);
+
   return (
     <KTVErrorBoundary>
       <div className="flex flex-col md:flex-row h-screen bg-gray-900 text-white font-sans">
+        {/* === Sidebar === */}
         <aside className="w-full md:w-1/3 lg:w-1/4 h-auto md:h-screen bg-gray-800 shadow-lg overflow-y-auto">
           <div className="flex items-center justify-between p-4 border-b border-gray-700">
             <span className="text-sm text-gray-300">Login sebagai:</span>
@@ -147,6 +183,7 @@ export default function App() {
               onClick={() => {
                 localStorage.removeItem("currentUser");
                 setCurrentUser("");
+                setRole(null);
               }}
               className="text-xs text-red-400 hover:text-red-500 ml-2"
             >
@@ -154,34 +191,40 @@ export default function App() {
             </button>
           </div>
 
-          <SidebarForm
-            activeRoomNames={safeBookings.map((b) => b.room)}
-            onAddBooking={addBooking}
-            formPrefill={formPrefill}
-            onClearPrefill={() => setFormPrefill(null)}
-            onShowHistory={() => setShowHistory(true)}
-            currentUser={currentUser}
-          />
+          {canManageBookings && (
+            <SidebarForm
+              activeRoomNames={safeBookings.map((b) => b.room)}
+              onAddBooking={addBooking}
+              formPrefill={formPrefill}
+              onClearPrefill={() => setFormPrefill(null)}
+              onShowHistory={() => setShowHistory(true)}
+              currentUser={currentUser}
+            />
+          )}
         </aside>
 
+        {}
         <main className="w-full md:w-2/3 lg:w-3/4 h-screen overflow-y-auto bg-gray-800/50">
           {!showHistory ? (
             <BookingGrid
               bookings={safeBookings}
               now={now}
               onExpire={handleExpire}
-              onCancelBooking={(id) => {
-                if (id) removeBooking(id);
-              }}
+              onCancelBooking={(id) => id && removeBooking(id)}
             />
-          ) : (
+          ) : canViewHistory ? (
             <HistoryReportDashboard
               history={safeHistory}
               onClose={() => setShowHistory(false)}
             />
+          ) : (
+            <div className="flex items-center justify-center h-full text-gray-400">
+              Kamu tidak memiliki akses ke laporan historis.
+            </div>
           )}
         </main>
 
+        {}
         {expiredBooking && (
           <ExpiredModal
             booking={expiredBooking}
