@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { Synth, Loop, Transport } from "tone";
+import { Synth, Loop, Transport, start as ToneStart } from "tone";
 import { formatTimeForInput } from "./utils/helpers";
 import KTVErrorBoundary from "./components/KTVErrorBoundary";
 import SidebarForm from "./components/SidebarForm";
@@ -90,6 +90,19 @@ export default function App() {
     }
   }, [bookings, now]);
 
+  useEffect(() => {
+    expireLockRef.current = {};
+  }, [currentUser]);
+
+  useEffect(() => {
+    const stuckExpired = bookings.find(
+      (b) => b.expired && !expiredBooking && !expireLockRef.current[b.id]
+    );
+    if (stuckExpired) {
+      removeBooking(stuckExpired.id);
+    }
+  }, [bookings, expiredBooking]);
+
   const handleLogin = (user) => {
     localStorage.setItem("currentUser", user);
     setCurrentUser(user);
@@ -97,25 +110,25 @@ export default function App() {
   };
 
   const startAlarm = useCallback(async () => {
-  try {
-    await Tone.start();
-    if (!alarmRef.current) {
-      const synth = new Synth({
-        oscillator: { type: "triangle" },
-        envelope: { attack: 0.05, decay: 0.1, sustain: 0.4, release: 0.6 },
-      }).toDestination();
-      const loop = new Loop(
-        (time) => {
-          synth.triggerAttackRelease("A5", "8n", time);
-          synth.triggerAttackRelease("E6", "8n", time + 0.2);
-        },
-        "1.2s"
-      ).start(0);
-      alarmRef.current = loop;
-    }
-    if (Transport.state !== "started") Transport.start();
-  } catch (err) {}
-}, []);
+    try {
+      await ToneStart();
+      if (!alarmRef.current) {
+        const synth = new Synth({
+          oscillator: { type: "triangle" },
+          envelope: { attack: 0.05, decay: 0.1, sustain: 0.4, release: 0.6 },
+        }).toDestination();
+        const loop = new Loop(
+          (time) => {
+            synth.triggerAttackRelease("A5", "8n", time);
+            synth.triggerAttackRelease("E6", "8n", time + 0.2);
+          },
+          "1.2s"
+        ).start(0);
+        alarmRef.current = loop;
+      }
+      if (Transport.state !== "started") Transport.start();
+    } catch {}
+  }, []);
 
   const stopAlarm = useCallback(() => {
     try {
@@ -139,19 +152,15 @@ export default function App() {
   };
 
   const removeBooking = async (bookingId) => {
-  if (!bookingId) return;
-  try {
-    await remove(ref(db, "bookings/" + bookingId));
-    delete expireLockRef.current[bookingId];
-    if (expiredBooking?.id === bookingId) setExpiredBooking(null);
-  } catch (err) {
-    console.error("Failed to remove booking:", err);
-  }
-};
-
-useEffect(() => {
-  expireLockRef.current = {};
-}, [currentUser]);
+    if (!bookingId) return;
+    try {
+      await remove(ref(db, "bookings/" + bookingId));
+      delete expireLockRef.current[bookingId];
+      if (expiredBooking?.id === bookingId) setExpiredBooking(null);
+    } catch (err) {
+      console.error("Failed to remove booking:", err);
+    }
+  };
 
   const handleExpire = useCallback(
     (booking) => {
@@ -169,23 +178,23 @@ useEffect(() => {
   );
 
   const handleCompleteSession = useCallback(
-  async (bookingId) => {
-    const finishedBooking = bookings.find((b) => b.id === bookingId);
-    if (finishedBooking) {
-      const historyRef = push(ref(db, "history"));
-      await set(historyRef, {
-        ...finishedBooking,
-        finishedAt: new Date().toISOString(),
-        handledBy: currentUser,
-      });
-    }
-    stopAlarm();
-    await remove(ref(db, "bookings/" + bookingId));
-    delete expireLockRef.current[bookingId];
-    setExpiredBooking(null);
-  },
-  [bookings, currentUser, stopAlarm]
-);
+    async (bookingId) => {
+      const finishedBooking = bookings.find((b) => b.id === bookingId);
+      if (finishedBooking) {
+        const historyRef = push(ref(db, "history"));
+        await set(historyRef, {
+          ...finishedBooking,
+          finishedAt: new Date().toISOString(),
+          handledBy: currentUser,
+        });
+      }
+      stopAlarm();
+      await remove(ref(db, "bookings/" + bookingId));
+      delete expireLockRef.current[bookingId];
+      setExpiredBooking(null);
+    },
+    [bookings, currentUser, stopAlarm]
+  );
 
   const handleExtendSession = useCallback(
     (booking) => {
