@@ -1,13 +1,10 @@
 import { 
-  TARIF_HAPPY_HOUR, 
-  TARIF_PRIME_TIME, 
   WARNING_TIME_MINUTES 
 } from '../data/constants';
 
 export const TARIF_PAGI = 45000;
 export const TARIF_MALAM = 60000;
 export const EXTRA_ROOM_CHARGE = 5000;
-export const FREE_PROMO_MINUTES = 30;
 
 export const formatCurrency = (amount) => {
   return new Intl.NumberFormat('id-ID', {
@@ -58,17 +55,28 @@ export const calculateTarif = (startTime) => {
 
 export const calculateTotalPriceWithPromo = (startTime, durationMinutes, people) => {
   const tarif = calculateTarif(startTime);
-  const durasiTagih = Math.max(0, durationMinutes - FREE_PROMO_MINUTES);
-  const hargaWaktu = (tarif / 60) * durasiTagih;
+  const durasiJam = durationMinutes / 60;
+
+  let promoNote = '-';
+  if (durationMinutes >= 180) {
+    promoNote = '1 jam gratis';
+  } else if (durationMinutes >= 120) {
+    promoNote = '30 menit gratis';
+  }
+
+  const hargaWaktu = tarif * durasiJam;
+
   const biayaTambahan = people > 10 ? EXTRA_ROOM_CHARGE : 0;
-  const total = Math.round(hargaWaktu + biayaTambahan);
+
+  const total = hargaWaktu + biayaTambahan;
 
   return {
     tarif,
-    durasiTagih,
+    durasiJam,
     hargaWaktu,
     biayaTambahan,
-    total
+    total,
+    promoNote
   };
 };
 
