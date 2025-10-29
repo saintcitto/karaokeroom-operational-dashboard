@@ -153,8 +153,6 @@ useEffect(() => {
   expireLockRef.current = {};
 }, [currentUser]);
 
-jadi gini dawg?
-
   const handleExpire = useCallback(
     (booking) => {
       if (!booking?.id) return;
