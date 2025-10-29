@@ -13,28 +13,35 @@ export default function UserLogin({ onLogin }) {
 
   useEffect(() => {
     const body = document.querySelector("body");
-    body.style.background = "radial-gradient(circle at center, #1e1e2f, #0e0e15)";
+    body.style.background =
+      "radial-gradient(circle at center, #191926 0%, #0c0c14 100%)";
     body.style.transition = "background 0.8s ease-in-out";
     return () => {
       body.style.background = "";
     };
   }, []);
 
-  const playClickSound = () => {
+  const playClickSound = async () => {
     try {
       const synth = new Synth().toDestination();
-      synth.triggerAttackRelease("E5", "16n");
+      await Tone.start();
+      synth.triggerAttackRelease("A5", "16n");
     } catch (e) {
       console.warn("Sound init failed:", e);
     }
   };
 
+  const handleLoginClick = async (user) => {
+    await playClickSound();
+    setTimeout(() => {
+      onLogin(user);
+    }, 200);
+  };
+
   return (
     <div className="flex items-center justify-center h-screen relative overflow-hidden">
-      {/* Background Ambient Glow */}
       <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-blue-900/10 via-fuchsia-900/10 to-indigo-900/10 blur-3xl"></div>
 
-      {/* Main Card */}
       <div className="relative bg-gray-800/90 backdrop-blur-md p-8 rounded-2xl shadow-2xl w-[22rem] border border-gray-700/60 text-center animate-fadeIn">
         <h1 className="text-3xl font-extrabold mb-4 bg-gradient-to-r from-fuchsia-400 via-pink-400 to-purple-400 text-transparent bg-clip-text drop-shadow-lg">
           Karaoke Room Dashboard
@@ -47,13 +54,11 @@ export default function UserLogin({ onLogin }) {
           {users.map((user) => (
             <button
               key={user.name}
-              onClick={() => {
-                playClickSound();
-                onLogin(user.name);
-              }}
-              className="w-full py-2.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-fuchsia-600 hover:from-fuchsia-600 hover:to-pink-600 
-                text-white rounded-lg font-semibold tracking-wide shadow-md hover:shadow-xl hover:scale-[1.02]
-                transition-all duration-300 ease-out focus:ring-2 focus:ring-pink-500/50"
+              onClick={() => handleLoginClick(user.name)}
+              className="w-full py-2.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-fuchsia-600 
+              hover:from-fuchsia-600 hover:to-pink-600 text-white rounded-lg font-semibold tracking-wide 
+              shadow-md hover:shadow-xl hover:scale-[1.03] active:scale-[0.98] 
+              transition-all duration-300 ease-out focus:ring-2 focus:ring-pink-500/50"
             >
               {user.name}
               <span className="text-xs text-gray-200 font-normal"> ({user.role})</span>
@@ -61,15 +66,13 @@ export default function UserLogin({ onLogin }) {
           ))}
         </div>
 
-        <p className="mt-8 text-xs text-gray-500 tracking-wider opacity-80">
-          © {new Date().getFullYear()} Sunwiha Systems — v1.0
+        <p className="mt-8 text-xs text-pink-400 italic tracking-wider opacity-80">
+          sweet cherry pie 🍰
         </p>
       </div>
 
-      {/* Subtle Glow Layer */}
       <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-tr from-fuchsia-500/5 to-blue-600/5 animate-gradientMove"></div>
 
-      {/* CSS Animations */}
       <style>{`
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(20px); }
