@@ -5,17 +5,13 @@ import KTVErrorBoundary from './components/KTVErrorBoundary';
 import SidebarForm from './components/SidebarForm';
 import BookingGrid from './components/BookingGrid';
 import ExpiredModal from './components/ExpiredModal';
-import HistoryTable from './components/HistoryTable';
-import HistoryReport from './components/HistoryReport';
 import { db, ref, set, onValue, remove, update } from './firebaseConfig';
 
 export default function App() {
   const [bookings, setBookings] = useState([]);
-  const [history, setHistory] = useState([]);
   const [now, setNow] = useState(new Date());
   const [expiredBooking, setExpiredBooking] = useState(null);
   const [formPrefill, setFormPrefill] = useState(null);
-  const [viewMode, setViewMode] = useState('active');
   const alarmRef = useRef(null);
 
   useEffect(() => {
@@ -23,18 +19,16 @@ export default function App() {
     return () => clearInterval(timerId);
   }, []);
 
-  const syncBookings = useCallback(() => {
+  useEffect(() => {
     const bookingsRef = ref(db, 'bookings');
-    onValue(bookingsRef, (snapshot) => {
+    const unsubscribe = onValue(bookingsRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
-        const bookingsArray = Object.values(data)
-          .filter(b => b.startTime && b.endTime && !isNaN(new Date(b.startTime)))
-          .map(b => ({
-            ...b,
-            startTime: new Date(b.startTime),
-            endTime: new Date(b.endTime),
-          }));
+        const bookingsArray = Object.values(data).map(b => ({
+          ...b,
+          startTime: new Date(b.startTime),
+          endTime: new Date(b.endTime),
+        }));
         setBookings(bookingsArray);
 
         const expiredNow = bookingsArray.find(b => b.expired === true);
@@ -45,11 +39,8 @@ export default function App() {
         stopAlarm();
       }
     });
+    return () => unsubscribe();
   }, []);
-
-  useEffect(() => {
-    syncBookings();
-  }, [syncBookings]);
 
   const startAlarm = useCallback(() => {
     try {
@@ -82,14 +73,16 @@ export default function App() {
 
   const addBooking = (newBooking) => {
     const bookingWithFlag = { ...newBooking, expired: false };
+    setBookings(prev => [...prev, bookingWithFlag]);
     set(ref(db, 'bookings/' + newBooking.id), {
       ...bookingWithFlag,
       startTime: newBooking.startTime.toISOString(),
       endTime: newBooking.endTime.toISOString(),
-    }).catch((err) => console.error("Gagal menambahkan booking:", err));
+    });
   };
 
   const removeBooking = (bookingId) => {
+    setBookings(prev => prev.filter(b => b.id !== bookingId));
     remove(ref(db, 'bookings/' + bookingId));
   };
 
@@ -99,33 +92,23 @@ export default function App() {
   }, []);
 
   const handleCompleteSession = useCallback((bookingId) => {
-    const completed = bookings.find(b => b.id === bookingId);
-    if (completed) {
-      setHistory(prev => [...prev, completed]);
-    }
     stopAlarm();
     removeBooking(bookingId);
     setExpiredBooking(null);
-  }, [bookings, stopAlarm]);
+  }, [stopAlarm]);
 
   const handleExtendSession = useCallback((booking) => {
     stopAlarm();
     setExpiredBooking(null);
+
     setFormPrefill({
       room: booking.room,
-      startTime: formatTimeForInput(booking.endTime)
+      startTime: formatTimeForInput(booking.endTime),
+      note: `Perpanjangan dari sesi sebelumnya (${formatTimeForInput(booking.startTime)} - ${formatTimeForInput(booking.endTime)})`,
     });
+
     removeBooking(booking.id);
   }, [stopAlarm]);
-
-  const clearAllBookings = async () => {
-    if (window.confirm("Yakin ingin menghapus SEMUA data booking & histori?")) {
-      await remove(ref(db, 'bookings'));
-      setBookings([]);
-      setHistory([]);
-      alert("Semua data berhasil dihapus.");
-    }
-  };
 
   const activeRoomNames = useMemo(() => bookings.map(b => b.room), [bookings]);
 
@@ -150,45 +133,16 @@ export default function App() {
             formPrefill={formPrefill}
             onClearPrefill={() => setFormPrefill(null)}
           />
-          <div className="p-4 border-t border-gray-700 space-y-2">
-            <button
-              onClick={() => setViewMode(viewMode === 'active' ? 'history' : 'active')}
-              className="w-full py-2 bg-blue-600 hover:bg-blue-700 rounded-md font-medium transition-colors"
-            >
-              {viewMode === 'active' ? '📊 Lihat Data Historis' : '⬅️ Kembali ke Pemesanan'}
-            </button>
-            <button
-              onClick={syncBookings}
-              className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 rounded-md font-medium transition-colors"
-            >
-              🔄 Sinkronisasi Ulang
-            </button>
-            <button
-              onClick={clearAllBookings}
-              className="w-full py-2 bg-red-700 hover:bg-red-800 rounded-md font-medium transition-colors"
-            >
-              🧹 Reset Database
-            </button>
-          </div>
         </aside>
 
-        <main className="w-full md:w-2/3 lg:w-3/4 h-screen overflow-y-auto bg-gray-800/50 p-4">
-          {viewMode === 'active' ? (
-            <BookingGrid
-              bookings={bookings}
-              now={now}
-              onExpire={handleExpire}
-              onCancelBooking={removeBooking}
-              stats={bookingStats}
-            />
-          ) : (
-            <>
-              <HistoryReport history={history} />
-              <div className="mt-6">
-                <HistoryTable history={history} />
-              </div>
-            </>
-          )}
+        <main className="w-full md:w-2/3 lg:w-3/4 h-screen bg-gray-800/50">
+          <BookingGrid
+            bookings={bookings}
+            now={now}
+            onExpire={handleExpire}
+            onCancelBooking={removeBooking}
+            stats={bookingStats}
+          />
         </main>
 
         {expiredBooking && (
