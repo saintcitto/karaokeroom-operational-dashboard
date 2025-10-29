@@ -57,15 +57,18 @@ export const calculateTotalPriceWithPromo = (startTime, durationMinutes, people)
   const tarif = calculateTarif(startTime);
   const durasiJam = durationMinutes / 60;
 
+  let freeMinutes = 0;
   let bayarJam = durasiJam;
   let promoNote = '-';
 
-  if (durationMinutes >= 180) {
+  if (durationMinutes === 120) {
+    freeMinutes = 30;
     bayarJam = 2;
-    promoNote = '1 jam gratis';
-  } else if (durationMinutes >= 120) {
-    bayarJam = 1.5; // bayar 1,5 jam saja
-    promoNote = '30 menit gratis';
+    promoNote = 'Gratis 30 menit';
+  } else if (durationMinutes === 180) {
+    freeMinutes = 60;
+    bayarJam = 3;
+    promoNote = 'Gratis 1 jam';
   }
 
   const hargaWaktu = tarif * bayarJam;
@@ -75,6 +78,7 @@ export const calculateTotalPriceWithPromo = (startTime, durationMinutes, people)
   return {
     tarif,
     durasiJam,
+    freeMinutes,
     bayarJam,
     hargaWaktu,
     biayaTambahan,
