@@ -37,4 +37,42 @@ export default function HistoryReportDashboard({ history, onClose }) {
           onClick={onClose}
           className="text-red-400 hover:text-red-500 p-2 rounded-md bg-gray-800 hover:bg-gray-700"
         >
-          <X
+          <X />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-gray-800/70 p-4 rounded-xl shadow">
+          <h3 className="text-gray-400 text-sm">Pendapatan Shift Pagi</h3>
+          <p className="text-2xl font-bold text-green-400">Rp {totalPagi.toLocaleString()}</p>
+        </div>
+        <div className="bg-gray-800/70 p-4 rounded-xl shadow">
+          <h3 className="text-gray-400 text-sm">Pendapatan Shift Malam</h3>
+          <p className="text-2xl font-bold text-yellow-400">Rp {totalMalam.toLocaleString()}</p>
+        </div>
+        <div className="bg-gray-800/70 p-4 rounded-xl shadow">
+          <h3 className="text-gray-400 text-sm">Total Pendapatan Hari Ini</h3>
+          <p className="text-2xl font-bold text-blue-400">Rp {totalHarian.toLocaleString()}</p>
+        </div>
+      </div>
+
+      <div className="bg-gray-800/60 p-4 rounded-xl shadow">
+        <h3 className="text-lg font-semibold text-white mb-3">📈 Grafik Transaksi per Kasir</h3>
+        <ResponsiveContainer width="100%" height={300}>
+          <BarChart data={kasirData}>
+            <XAxis dataKey="name" stroke="#ccc" />
+            <YAxis />
+            <Tooltip />
+            <Legend />
+            <Bar dataKey="transaksi" fill="#60a5fa" radius={[6, 6, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="text-center text-gray-300 mt-6">
+        🧾 Kasir paling aktif hari ini:{" "}
+        <span className="font-semibold text-pink-400">{kasirAktif}</span>
+      </div>
+    </div>
+  );
+}
