@@ -5,10 +5,13 @@ import KTVErrorBoundary from './components/KTVErrorBoundary';
 import SidebarForm from './components/SidebarForm';
 import BookingGrid from './components/BookingGrid';
 import ExpiredModal from './components/ExpiredModal';
+import HistoryTable from './components/HistoryTable';
+import HistoryReport from './components/HistoryReport';
 import { db, ref, set, onValue, remove, update } from './firebaseConfig';
 
 export default function App() {
   const [bookings, setBookings] = useState([]);
+  const [historyData, setHistoryData] = useState([]);
   const [now, setNow] = useState(new Date());
   const [expiredBooking, setExpiredBooking] = useState(null);
   const [formPrefill, setFormPrefill] = useState(null);
@@ -41,6 +44,15 @@ export default function App() {
     });
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    const savedHistory = localStorage.getItem('historyData');
+    if (savedHistory) setHistoryData(JSON.parse(savedHistory));
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('historyData', JSON.stringify(historyData));
+  }, [historyData]);
 
   const startAlarm = useCallback(() => {
     try {
@@ -93,9 +105,13 @@ export default function App() {
 
   const handleCompleteSession = useCallback((bookingId) => {
     stopAlarm();
+    const finishedBooking = bookings.find(b => b.id === bookingId);
+    if (finishedBooking) {
+      setHistoryData(prev => [...prev, { ...finishedBooking, finishedAt: new Date() }]);
+    }
     removeBooking(bookingId);
     setExpiredBooking(null);
-  }, [stopAlarm]);
+  }, [bookings, stopAlarm]);
 
   const handleExtendSession = useCallback((booking) => {
     stopAlarm();
@@ -132,7 +148,7 @@ export default function App() {
           />
         </aside>
 
-        <main className="w-full md:w-2/3 lg:w-3/4 h-screen bg-gray-800/50">
+        <main className="w-full md:w-2/3 lg:w-3/4 h-screen bg-gray-800/50 overflow-y-auto">
           <BookingGrid
             bookings={bookings}
             now={now}
@@ -140,6 +156,11 @@ export default function App() {
             onCancelBooking={removeBooking}
             stats={bookingStats}
           />
+
+          <div className="p-6 space-y-10">
+            <HistoryTable history={historyData} />
+            <HistoryReport history={historyData} />
+          </div>
         </main>
 
         {expiredBooking && (
