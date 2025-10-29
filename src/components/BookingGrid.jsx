@@ -1,43 +1,141 @@
-import React from 'react';
-import { Info } from 'lucide-react';
-import BookingGridHeader from './BookingGridHeader';
-import BookingCard from './BookingCard';
+import React, { useEffect, useState } from 'react';
+import { Clock, Users, Tag, XCircle } from 'lucide-react';
 
-const BookingGrid = ({ bookings = [], now = new Date(), onExpire, onCancelBooking, stats = {} }) => {
-  const safeBookings = Array.isArray(bookings) ? bookings : [];
-  const safeStats = typeof stats === 'object' && stats !== null
-    ? stats
-    : { active: 0, warning: 0, expired: 0 };
+export default function BookingCard({ booking, now, onExpire, onCancel }) {
+  const [remaining, setRemaining] = useState(
+    Math.max(0, booking.endTime - now)
+  );
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setRemaining(Math.max(0, booking.endTime - new Date()));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [booking.endTime]);
+
+  const totalDuration = booking.endTime - booking.startTime;
+  const progress = 100 - (remaining / totalDuration) * 100;
+
+  const isExpired = remaining <= 0;
+  const promoLabel =
+    booking.promo === 'Gratis 1 jam'
+      ? '🎁 +60 Menit Gratis'
+      : booking.promo === 'Gratis 30 menit'
+      ? '🎁 +30 Menit Gratis'
+      : null;
+
+  // Durasi total (termasuk bonus)
+  const formatTime = (ms) => {
+    const totalSeconds = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(
+      2,
+      '0'
+    )}:${String(seconds).padStart(2, '0')}`;
+  };
 
   return (
-    <div className="p-6 h-full flex flex-col">
-      <h2 className="text-2xl font-bold mb-6 text-white">Pemesanan Aktif</h2>
-      <BookingGridHeader stats={safeStats} />
-      {safeBookings.length === 0 ? (
-        <div className="flex-1 flex items-center justify-center text-gray-500">
-          <div className="text-center">
-            <Info size={48} className="mx-auto mb-2" />
-            <p>Belum ada pemesanan aktif.</p>
+    <div
+      className={`relative rounded-2xl p-5 border transition-all duration-300 shadow-lg hover:shadow-xl ${
+        isExpired
+          ? 'border-red-500 bg-gradient-to-br from-red-900/30 to-gray-900'
+          : 'border-gray-700 bg-gradient-to-br from-gray-800 to-gray-900'
+      }`}
+    >
+      {/* Header */}
+      <div className="flex justify-between items-center mb-3">
+        <h3 className="text-xl font-bold text-white tracking-wide">
+          {booking.room}
+        </h3>
+        {promoLabel && (
+          <div className="text-xs px-2 py-1 bg-gradient-to-r from-amber-400 to-yellow-600 rounded-full font-semibold text-gray-900 shadow-sm">
+            {promoLabel}
           </div>
+        )}
+      </div>
+
+      {/* Info Section */}
+      <div className="space-y-2 text-sm text-gray-300">
+        <p className="flex items-center gap-2">
+          <Clock size={16} className="text-blue-400" />
+          <span>
+            {booking.startTime.toLocaleTimeString('id-ID', {
+              hour: '2-digit',
+              minute: '2-digit',
+            })}{' '}
+            -{' '}
+            {booking.endTime.toLocaleTimeString('id-ID', {
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
+          </span>
+        </p>
+
+        <p className="flex items-center gap-2">
+          <Users size={16} className="text-green-400" />
+          <span>{booking.people} orang</span>
+        </p>
+
+        <p className="flex items-center gap-2">
+          <Tag size={16} className="text-yellow-400" />
+          <span>Kasir: {booking.handledBy}</span>
+        </p>
+      </div>
+
+      {/* Timer */}
+      <div className="mt-4">
+        <div className="flex justify-between items-center text-xs mb-1">
+          <span className="text-gray-400">Sisa Waktu</span>
+          <span
+            className={`font-semibold ${
+              isExpired ? 'text-red-400' : 'text-green-400'
+            }`}
+          >
+            {formatTime(remaining)}
+          </span>
         </div>
-      ) : (
-        <div
-          className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-y-auto pr-1"
-          style={{ scrollbarGutter: 'stable' }}
+
+        <div className="w-full h-2 bg-gray-700 rounded-full overflow-hidden">
+          <div
+            className={`h-full transition-all duration-500 ${
+              isExpired ? 'bg-red-500' : 'bg-gradient-to-r from-green-500 to-blue-500'
+            }`}
+            style={{ width: `${progress}%` }}
+          ></div>
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div className="flex justify-between items-center mt-5">
+        <div>
+          <p className="text-sm text-gray-400">Subtotal:</p>
+          <p className="text-lg font-semibold text-emerald-400">
+            Rp {booking.totalPrice?.toLocaleString('id-ID')}
+          </p>
+        </div>
+
+        <button
+          onClick={() => onCancel(booking.id)}
+          className="flex items-center gap-1 px-3 py-2 bg-red-600 hover:bg-red-700 text-sm font-semibold rounded-lg transition-colors"
         >
-          {safeBookings.map((booking) => (
-            <BookingCard
-              key={booking.id}
-              booking={booking}
-              now={now}
-              onExpire={onExpire}
-              onCancel={onCancelBooking}
-            />
-          ))}
+          <XCircle size={16} />
+          Batalkan
+        </button>
+      </div>
+
+      {/* Overlay Expired */}
+      {isExpired && (
+        <div className="absolute inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center rounded-2xl">
+          <div className="text-center">
+            <p className="text-red-400 font-bold text-lg mb-1">Waktu Habis</p>
+            <p className="text-xs text-gray-300">
+              Segera perpanjang atau tutup sesi
+            </p>
+          </div>
         </div>
       )}
     </div>
   );
-};
-
-export default BookingGrid;
+}
