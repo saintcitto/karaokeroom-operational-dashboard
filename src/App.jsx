@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Synth, Loop, Transport } from 'tone';
-import { formatTimeForInput } from './utils/helpers';
+import { getBookingStatus, formatTimeForInput } from './utils/helpers';
 import KTVErrorBoundary from './components/KTVErrorBoundary';
 import SidebarForm from './components/SidebarForm';
 import BookingGrid from './components/BookingGrid';
@@ -20,8 +20,8 @@ export default function App() {
 
   useEffect(() => {
     if (!currentUser) return;
-    const timer = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(timer);
+    const timerId = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timerId);
   }, [currentUser]);
 
   useEffect(() => {
@@ -29,15 +29,14 @@ export default function App() {
     const bookingsRef = ref(db, 'bookings');
     const unsubscribe = onValue(bookingsRef, (snapshot) => {
       const data = snapshot.val() || {};
-      const bookingsArray = Object.values(data)
-        .filter(b => b && b.startTime && b.endTime)
+      const validBookings = Object.values(data)
+        .filter(b => b && b.room && b.startTime && b.endTime)
         .map(b => ({
           ...b,
           startTime: new Date(b.startTime),
           endTime: new Date(b.endTime),
-        }))
-        .filter(b => !isNaN(b.startTime) && !isNaN(b.endTime));
-      setBookings(bookingsArray);
+        }));
+      setBookings(validBookings);
     });
     return () => unsubscribe();
   }, [currentUser]);
@@ -46,21 +45,18 @@ export default function App() {
     const historyRef = ref(db, 'history');
     const unsubscribe = onValue(historyRef, (snapshot) => {
       const data = snapshot.val() || {};
-      const historyArray = Object.values(data);
-      setHistory(Array.isArray(historyArray) ? historyArray : []);
+      setHistory(Object.values(data));
     });
     return () => unsubscribe();
   }, []);
 
   const startAlarm = useCallback(() => {
-    try {
-      if (!alarmRef.current) {
-        const synth = new Synth().toDestination();
-        const loop = new Loop(time => synth.triggerAttackRelease("C5", "8n", time), "1.5s").start(0);
-        alarmRef.current = loop;
-      }
-      if (Transport.state !== 'started') Transport.start();
-    } catch {}
+    if (!alarmRef.current) {
+      const synth = new Synth().toDestination();
+      const loop = new Loop(time => synth.triggerAttackRelease("C5", "8n", time), "1.5s").start(0);
+      alarmRef.current = loop;
+    }
+    if (Transport.state !== 'started') Transport.start();
   }, []);
 
   const stopAlarm = useCallback(() => {
@@ -74,56 +70,63 @@ export default function App() {
 
   const addBooking = (newBooking) => {
     if (!newBooking) return;
-    const id = newBooking.id;
-    set(ref(db, 'bookings/' + id), {
+    const bookingRef = ref(db, 'bookings/' + newBooking.id);
+    set(bookingRef, {
       ...newBooking,
       startTime: newBooking.startTime.toISOString(),
       endTime: newBooking.endTime.toISOString(),
-      createdBy: currentUser,
+      handledBy: currentUser
     });
     const logRef = push(ref(db, 'logs'));
     set(logRef, {
-      type: 'ADD_BOOKING',
-      by: currentUser,
-      time: new Date().toISOString(),
+      type: 'BOOKING_CREATED',
       room: newBooking.room,
-      duration: newBooking.duration,
+      handledBy: currentUser,
+      timestamp: new Date().toISOString()
     });
   };
 
   const removeBooking = (bookingId) => {
     if (!bookingId) return;
     remove(ref(db, 'bookings/' + bookingId));
-    const logRef = push(ref(db, 'logs'));
-    set(logRef, {
-      type: 'REMOVE_BOOKING',
-      by: currentUser,
-      time: new Date().toISOString(),
-      id: bookingId,
-    });
   };
 
   const handleExpire = useCallback((booking) => {
     if (!booking) return;
     update(ref(db, 'bookings/' + booking.id), { expired: true });
     setExpiredBooking(booking);
-  }, []);
+    startAlarm();
+  }, [startAlarm]);
 
   const handleCompleteSession = useCallback((bookingId) => {
     const finishedBooking = bookings.find(b => b.id === bookingId);
     if (finishedBooking) {
-      const historyRef = push(ref(db, 'history'));
+      const dateKey = new Date().toISOString().split('T')[0];
+      const shift = new Date().getHours() < 17 ? 'pagi' : 'malam';
+      const historyRef = push(ref(db, `history/${dateKey}/sessions`));
       set(historyRef, {
         ...finishedBooking,
         finishedAt: new Date().toISOString(),
-        handledBy: currentUser,
+        shift,
+        handledBy: currentUser
       });
+      const totalsRef = ref(db, `history/${dateKey}/totals`);
+      onValue(totalsRef, (snapshot) => {
+        const current = snapshot.val() || { pagi: 0, malam: 0, total: 0 };
+        const updated = {
+          pagi: shift === 'pagi' ? current.pagi + finishedBooking.totalPrice : current.pagi,
+          malam: shift === 'malam' ? current.malam + finishedBooking.totalPrice : current.malam,
+          total: current.total + finishedBooking.totalPrice
+        };
+        set(totalsRef, updated);
+      }, { onlyOnce: true });
       const logRef = push(ref(db, 'logs'));
       set(logRef, {
-        type: 'COMPLETE_SESSION',
-        by: currentUser,
-        time: new Date().toISOString(),
+        type: 'SESSION_COMPLETED',
         room: finishedBooking.room,
+        handledBy: currentUser,
+        totalPrice: finishedBooking.totalPrice,
+        timestamp: new Date().toISOString()
       });
     }
     stopAlarm();
@@ -135,18 +138,12 @@ export default function App() {
     if (!booking) return;
     stopAlarm();
     setExpiredBooking(null);
-    setFormPrefill({
-      room: booking.room,
-      startTime: formatTimeForInput(booking.endTime),
-    });
+    setFormPrefill({ room: booking.room, startTime: formatTimeForInput(booking.endTime) });
     removeBooking(booking.id);
   }, [stopAlarm]);
 
   if (!currentUser)
     return <UserLogin onLogin={(user) => setCurrentUser(user)} />;
-
-  const safeBookings = Array.isArray(bookings) ? bookings : [];
-  const safeHistory = Array.isArray(history) ? history : [];
 
   return (
     <KTVErrorBoundary>
@@ -166,27 +163,18 @@ export default function App() {
             </button>
           </div>
           <SidebarForm
-            activeRoomNames={safeBookings.map(b => b.room)}
+            activeRoomNames={bookings.map(b => b.room)}
             onAddBooking={addBooking}
             formPrefill={formPrefill}
             onClearPrefill={() => setFormPrefill(null)}
           />
         </aside>
         <main className="w-full md:w-2/3 lg:w-3/4 h-screen overflow-y-auto bg-gray-800/50">
-          <BookingGrid
-            bookings={safeBookings}
-            now={now}
-            onExpire={handleExpire}
-            onCancelBooking={removeBooking}
-          />
-          <HistoryReportDashboard history={safeHistory} />
+          <BookingGrid bookings={bookings} now={now} onExpire={handleExpire} onCancelBooking={removeBooking} />
+          <HistoryReportDashboard history={history} />
         </main>
         {expiredBooking && (
-          <ExpiredModal
-            booking={expiredBooking}
-            onComplete={handleCompleteSession}
-            onExtend={handleExtendSession}
-          />
+          <ExpiredModal booking={expiredBooking} onComplete={handleCompleteSession} onExtend={handleExtendSession} />
         )}
       </div>
     </KTVErrorBoundary>
