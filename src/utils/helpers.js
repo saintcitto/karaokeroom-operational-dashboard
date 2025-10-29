@@ -4,6 +4,10 @@ import {
   WARNING_TIME_MINUTES 
 } from '../data/constants';
 
+export const TARIF_PAGI = 45000;
+export const TARIF_MALAM = 60000;
+export const EXTRA_ROOM_CHARGE = 5000;
+export const FREE_PROMO_MINUTES = 30;
 
 export const formatCurrency = (amount) => {
   return new Intl.NumberFormat('id-ID', {
@@ -40,12 +44,32 @@ export const formatDuration = (totalMinutes) => {
 export const calculateTarif = (startTime) => {
   const hour = startTime.getHours();
   const minute = startTime.getMinutes();
-  
-  if (hour === 16 && minute >= 45) return TARIF_PRIME_TIME;
-  if (hour >= 17) return TARIF_PRIME_TIME;
-  if (hour <= 9) return TARIF_PRIME_TIME;
-  
-  return TARIF_HAPPY_HOUR;
+
+  const pagiMulai = 10 * 60;       // 10:00
+  const soreMulai = 16 * 60 + 45;  // 16:45
+  const totalMenit = hour * 60 + minute;
+
+  if (totalMenit >= pagiMulai && totalMenit <= soreMulai - 1) {
+    return TARIF_PAGI;
+  } else {
+    return TARIF_MALAM;
+  }
+};
+
+export const calculateTotalPriceWithPromo = (startTime, durationMinutes, people) => {
+  const tarif = calculateTarif(startTime);
+  const durasiTagih = Math.max(0, durationMinutes - FREE_PROMO_MINUTES);
+  const hargaWaktu = (tarif / 60) * durasiTagih;
+  const biayaTambahan = people > 10 ? EXTRA_ROOM_CHARGE : 0;
+  const total = Math.round(hargaWaktu + biayaTambahan);
+
+  return {
+    tarif,
+    durasiTagih,
+    hargaWaktu,
+    biayaTambahan,
+    total
+  };
 };
 
 export const getBookingStatus = (endTime, now) => {
@@ -56,4 +80,3 @@ export const getBookingStatus = (endTime, now) => {
   if (timeLeftMin <= WARNING_TIME_MINUTES) return 'warning';
   return 'normal';
 };
-
