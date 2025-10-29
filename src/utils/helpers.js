@@ -57,26 +57,29 @@ export const calculateTotalPriceWithPromo = (startTime, durationMinutes, people)
   const tarif = calculateTarif(startTime);
   const durasiJam = durationMinutes / 60;
 
+  let bayarJam = durasiJam;
   let promoNote = '-';
+
   if (durationMinutes >= 180) {
+    bayarJam = 2;
     promoNote = '1 jam gratis';
   } else if (durationMinutes >= 120) {
+    bayarJam = 1.5; // bayar 1,5 jam saja
     promoNote = '30 menit gratis';
   }
 
-  const hargaWaktu = tarif * durasiJam;
-
-  const biayaTambahan = people > 10 ? EXTRA_ROOM_CHARGE : 0;
-
+  const hargaWaktu = tarif * bayarJam;
+  const biayaTambahan = people > 10 ? 5000 : 0;
   const total = hargaWaktu + biayaTambahan;
 
   return {
     tarif,
     durasiJam,
+    bayarJam,
     hargaWaktu,
     biayaTambahan,
     total,
-    promoNote
+    promoNote,
   };
 };
 
