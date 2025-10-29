@@ -96,25 +96,26 @@ export default function App() {
     setRole(USER_ROLES[user] || null);
   };
 
-  const startAlarm = useCallback(() => {
-    try {
-      if (!alarmRef.current) {
-        const synth = new Synth({
-          oscillator: { type: "triangle" },
-          envelope: { attack: 0.05, decay: 0.1, sustain: 0.4, release: 0.6 },
-        }).toDestination();
-        const loop = new Loop(
-          (time) => {
-            synth.triggerAttackRelease("A5", "8n", time);
-            synth.triggerAttackRelease("E6", "8n", time + 0.2);
-          },
-          "1.2s"
-        ).start(0);
-        alarmRef.current = loop;
-      }
-      if (Transport.state !== "started") Transport.start();
-    } catch {}
-  }, []);
+  const startAlarm = useCallback(async () => {
+  try {
+    await Tone.start();
+    if (!alarmRef.current) {
+      const synth = new Synth({
+        oscillator: { type: "triangle" },
+        envelope: { attack: 0.05, decay: 0.1, sustain: 0.4, release: 0.6 },
+      }).toDestination();
+      const loop = new Loop(
+        (time) => {
+          synth.triggerAttackRelease("A5", "8n", time);
+          synth.triggerAttackRelease("E6", "8n", time + 0.2);
+        },
+        "1.2s"
+      ).start(0);
+      alarmRef.current = loop;
+    }
+    if (Transport.state !== "started") Transport.start();
+  } catch (err) {}
+}, []);
 
   const stopAlarm = useCallback(() => {
     try {
@@ -158,23 +159,23 @@ export default function App() {
   );
 
   const handleCompleteSession = useCallback(
-    (bookingId) => {
-      const finishedBooking = bookings.find((b) => b.id === bookingId);
-      if (finishedBooking) {
-        const historyRef = push(ref(db, "history"));
-        set(historyRef, {
-          ...finishedBooking,
-          finishedAt: new Date().toISOString(),
-          handledBy: currentUser,
-        });
-      }
-      stopAlarm();
-      removeBooking(bookingId);
-      setExpiredBooking(null);
-      delete expireLockRef.current[bookingId];
-    },
-    [bookings, currentUser, stopAlarm]
-  );
+  async (bookingId) => {
+    const finishedBooking = bookings.find((b) => b.id === bookingId);
+    if (finishedBooking) {
+      const historyRef = push(ref(db, "history"));
+      await set(historyRef, {
+        ...finishedBooking,
+        finishedAt: new Date().toISOString(),
+        handledBy: currentUser,
+      });
+    }
+    stopAlarm();
+    await remove(ref(db, "bookings/" + bookingId));
+    delete expireLockRef.current[bookingId];
+    setExpiredBooking(null);
+  },
+  [bookings, currentUser, stopAlarm]
+);
 
   const handleExtendSession = useCallback(
     (booking) => {
