@@ -19,34 +19,30 @@ export default function App() {
   const [showHistory, setShowHistory] = useState(false);
   const alarmRef = useRef(null);
 
-  const role = currentUser?.trim();
-  const isAdmin = role === "Baya Ganteng";
-
-  // ⏱ Update waktu setiap detik
   useEffect(() => {
     if (!currentUser) return;
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
   }, [currentUser]);
 
-  // 🔁 Ambil data bookings real-time
   useEffect(() => {
     if (!currentUser) return;
     const bookingsRef = ref(db, "bookings");
     const unsubscribe = onValue(bookingsRef, (snapshot) => {
       const data = snapshot.val() || {};
       const arr = Object.values(data).filter(Boolean);
-      const parsed = arr.map((b) => ({
-        ...b,
-        startTime: new Date(b.startTime),
-        endTime: new Date(b.endTime),
-      }));
+      const parsed = arr
+        .filter((b) => b?.startTime && b?.endTime)
+        .map((b) => ({
+          ...b,
+          startTime: new Date(b.startTime),
+          endTime: new Date(b.endTime),
+        }));
       setBookings(parsed);
     });
     return () => unsubscribe();
   }, [currentUser]);
 
-  // 📜 Ambil data history real-time
   useEffect(() => {
     const historyRef = ref(db, "history");
     const unsub = onValue(historyRef, (snapshot) => {
@@ -57,7 +53,6 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  // 🔔 Alarm sistem
   const startAlarm = useCallback(() => {
     try {
       if (!alarmRef.current) {
@@ -69,9 +64,7 @@ export default function App() {
         alarmRef.current = loop;
       }
       if (Transport.state !== "started") Transport.start();
-    } catch (e) {
-      console.warn("Alarm error:", e);
-    }
+    } catch {}
   }, []);
 
   const stopAlarm = useCallback(() => {
@@ -83,7 +76,6 @@ export default function App() {
     if (Transport.state === "started") Transport.stop();
   }, []);
 
-  // ➕ Tambah pemesanan baru
   const addBooking = (newBooking) => {
     if (!newBooking) return;
     const path = ref(db, "bookings/" + newBooking.id);
@@ -94,20 +86,17 @@ export default function App() {
     });
   };
 
-  // ❌ Hapus booking aktif
   const removeBooking = (bookingId) => {
     if (!bookingId) return;
     remove(ref(db, "bookings/" + bookingId));
   };
 
-  // ⏰ Tandai expired booking
   const handleExpire = useCallback((booking) => {
     if (!booking) return;
     update(ref(db, "bookings/" + booking.id), { expired: true });
     setExpiredBooking(booking);
   }, []);
 
-  // ✅ Selesaikan sesi booking → pindahkan ke history
   const handleCompleteSession = useCallback(
     (bookingId) => {
       const finishedBooking = bookings.find((b) => b.id === bookingId);
@@ -118,7 +107,6 @@ export default function App() {
           finishedAt: new Date().toISOString(),
           handledBy: currentUser,
           totalPrice: finishedBooking.totalPrice || 0,
-          date: new Date().toISOString().slice(0, 10),
         });
       }
       stopAlarm();
@@ -128,7 +116,6 @@ export default function App() {
     [bookings, stopAlarm, currentUser]
   );
 
-  // 🔁 Perpanjang sesi
   const handleExtendSession = useCallback(
     (booking) => {
       if (!booking) return;
@@ -143,18 +130,15 @@ export default function App() {
     [stopAlarm]
   );
 
-  // 🔐 Login handler
   if (!currentUser)
     return <UserLogin onLogin={(user) => setCurrentUser(user)} />;
 
   const safeBookings = Array.isArray(bookings) ? bookings : [];
   const safeHistory = Array.isArray(history) ? history : [];
 
-  // 🧩 Layout utama
   return (
     <KTVErrorBoundary>
       <div className="flex flex-col md:flex-row h-screen bg-gray-900 text-white font-sans">
-        {/* Sidebar */}
         <aside className="w-full md:w-1/3 lg:w-1/4 h-auto md:h-screen bg-gray-800 shadow-lg overflow-y-auto">
           <div className="flex items-center justify-between p-4 border-b border-gray-700">
             <span className="text-sm text-gray-300">Login sebagai:</span>
@@ -180,18 +164,17 @@ export default function App() {
           />
         </aside>
 
-        {/* Main Content */}
         <main className="w-full md:w-2/3 lg:w-3/4 h-screen overflow-y-auto bg-gray-800/50">
-          {/* Semua role bisa lihat BookingGrid */}
-          <BookingGrid
-            bookings={safeBookings}
-            now={now}
-            onExpire={handleExpire}
-            onCancelBooking={removeBooking}
-          />
-
-          {/* Khusus Admin bisa buka Data Historis */}
-          {isAdmin && showHistory && (
+          {!showHistory ? (
+            <BookingGrid
+              bookings={safeBookings}
+              now={now}
+              onExpire={handleExpire}
+              onCancelBooking={(id) => {
+                if (id) removeBooking(id);
+              }}
+            />
+          ) : (
             <HistoryReportDashboard
               history={safeHistory}
               onClose={() => setShowHistory(false)}
@@ -199,7 +182,6 @@ export default function App() {
           )}
         </main>
 
-        {/* Modal Booking Expired */}
         {expiredBooking && (
           <ExpiredModal
             booking={expiredBooking}
