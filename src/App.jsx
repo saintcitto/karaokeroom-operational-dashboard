@@ -1,4 +1,4 @@
-=import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Synth, Loop, Transport } from "tone";
 import { formatTimeForInput } from "./utils/helpers";
 import KTVErrorBoundary from "./components/KTVErrorBoundary";
