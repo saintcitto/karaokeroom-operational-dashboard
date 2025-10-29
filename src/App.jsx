@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Synth, Loop, Transport } from 'tone';
-import { getBookingStatus, formatTimeForInput } from './utils/helpers';
+import { formatTimeForInput } from './utils/helpers';
 import KTVErrorBoundary from './components/KTVErrorBoundary';
 import SidebarForm from './components/SidebarForm';
 import BookingGrid from './components/BookingGrid';
@@ -20,8 +20,8 @@ export default function App() {
 
   useEffect(() => {
     if (!currentUser) return;
-    const timerId = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(timerId);
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
   }, [currentUser]);
 
   useEffect(() => {
@@ -29,12 +29,15 @@ export default function App() {
     const bookingsRef = ref(db, 'bookings');
     const unsubscribe = onValue(bookingsRef, (snapshot) => {
       const data = snapshot.val() || {};
-      const bookingsArray = Object.values(data).map(b => ({
-        ...b,
-        startTime: new Date(b.startTime),
-        endTime: new Date(b.endTime),
-      }));
-      setBookings(Array.isArray(bookingsArray) ? bookingsArray : []);
+      const bookingsArray = Object.values(data)
+        .filter(b => b && b.startTime && b.endTime)
+        .map(b => ({
+          ...b,
+          startTime: new Date(b.startTime),
+          endTime: new Date(b.endTime),
+        }))
+        .filter(b => !isNaN(b.startTime) && !isNaN(b.endTime));
+      setBookings(bookingsArray);
     });
     return () => unsubscribe();
   }, [currentUser]);
@@ -71,16 +74,33 @@ export default function App() {
 
   const addBooking = (newBooking) => {
     if (!newBooking) return;
-    set(ref(db, 'bookings/' + newBooking.id), {
+    const id = newBooking.id;
+    set(ref(db, 'bookings/' + id), {
       ...newBooking,
       startTime: newBooking.startTime.toISOString(),
       endTime: newBooking.endTime.toISOString(),
+      createdBy: currentUser,
+    });
+    const logRef = push(ref(db, 'logs'));
+    set(logRef, {
+      type: 'ADD_BOOKING',
+      by: currentUser,
+      time: new Date().toISOString(),
+      room: newBooking.room,
+      duration: newBooking.duration,
     });
   };
 
   const removeBooking = (bookingId) => {
     if (!bookingId) return;
     remove(ref(db, 'bookings/' + bookingId));
+    const logRef = push(ref(db, 'logs'));
+    set(logRef, {
+      type: 'REMOVE_BOOKING',
+      by: currentUser,
+      time: new Date().toISOString(),
+      id: bookingId,
+    });
   };
 
   const handleExpire = useCallback((booking) => {
@@ -98,6 +118,13 @@ export default function App() {
         finishedAt: new Date().toISOString(),
         handledBy: currentUser,
       });
+      const logRef = push(ref(db, 'logs'));
+      set(logRef, {
+        type: 'COMPLETE_SESSION',
+        by: currentUser,
+        time: new Date().toISOString(),
+        room: finishedBooking.room,
+      });
     }
     stopAlarm();
     removeBooking(bookingId);
@@ -108,7 +135,10 @@ export default function App() {
     if (!booking) return;
     stopAlarm();
     setExpiredBooking(null);
-    setFormPrefill({ room: booking.room, startTime: formatTimeForInput(booking.endTime) });
+    setFormPrefill({
+      room: booking.room,
+      startTime: formatTimeForInput(booking.endTime),
+    });
     removeBooking(booking.id);
   }, [stopAlarm]);
 
@@ -142,14 +172,21 @@ export default function App() {
             onClearPrefill={() => setFormPrefill(null)}
           />
         </aside>
-
         <main className="w-full md:w-2/3 lg:w-3/4 h-screen overflow-y-auto bg-gray-800/50">
-          <BookingGrid bookings={safeBookings} now={now} onExpire={handleExpire} onCancelBooking={removeBooking} />
+          <BookingGrid
+            bookings={safeBookings}
+            now={now}
+            onExpire={handleExpire}
+            onCancelBooking={removeBooking}
+          />
           <HistoryReportDashboard history={safeHistory} />
         </main>
-
         {expiredBooking && (
-          <ExpiredModal booking={expiredBooking} onComplete={handleCompleteSession} onExtend={handleExtendSession} />
+          <ExpiredModal
+            booking={expiredBooking}
+            onComplete={handleCompleteSession}
+            onExtend={handleExtendSession}
+          />
         )}
       </div>
     </KTVErrorBoundary>
