@@ -5,76 +5,59 @@ import KTVErrorBoundary from './components/KTVErrorBoundary';
 import SidebarForm from './components/SidebarForm';
 import BookingGrid from './components/BookingGrid';
 import ExpiredModal from './components/ExpiredModal';
+import HistoryReportDashboard from './components/HistoryReportDashboard';
 import { db, ref, set, onValue, remove, update, push } from './firebaseConfig';
 
 export default function App() {
   const [bookings, setBookings] = useState([]);
+  const [persistedBookings, setPersistedBookings] = useState([]);
+  const [history, setHistory] = useState([]);
   const [now, setNow] = useState(new Date());
   const [expiredBooking, setExpiredBooking] = useState(null);
   const [formPrefill, setFormPrefill] = useState(null);
   const alarmRef = useRef(null);
 
   useEffect(() => {
-    const timerId = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(timerId);
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
   }, []);
 
   useEffect(() => {
     const bookingsRef = ref(db, 'bookings');
     const unsubscribe = onValue(bookingsRef, (snapshot) => {
       const data = snapshot.val();
-      if (!data) {
-        setBookings([]);
-        stopAlarm();
-        return;
-      }
-      const cleanedData = Object.values(data)
-        .filter(b =>
-          b &&
-          b.startTime &&
-          b.endTime &&
-          !isNaN(new Date(b.startTime)) &&
-          !isNaN(new Date(b.endTime))
-        )
+      if (!data) return setBookings([]);
+      const cleaned = Object.values(data)
+        .filter(b => b && b.startTime && b.endTime && !isNaN(new Date(b.startTime)) && !isNaN(new Date(b.endTime)))
         .map(b => ({
           ...b,
           startTime: new Date(b.startTime),
           endTime: new Date(b.endTime),
         }));
-      Object.entries(data).forEach(([key, b]) => {
-        if (
-          !b ||
-          !b.startTime ||
-          !b.endTime ||
-          isNaN(new Date(b.startTime)) ||
-          isNaN(new Date(b.endTime))
-        ) {
-          remove(ref(db, 'bookings/' + key));
-        }
-      });
-      setBookings(cleanedData);
-      const expiredNow = cleanedData.find(b => b.expired === true);
-      if (expiredNow) startAlarm();
-      else stopAlarm();
+      setPersistedBookings(cleaned);
+      setBookings(cleaned);
     });
     return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const historyRef = ref(db, 'history');
+    return onValue(historyRef, (snapshot) => {
+      const data = snapshot.val();
+      if (!data) return setHistory([]);
+      setHistory(Object.values(data));
+    });
   }, []);
 
   const startAlarm = useCallback(() => {
     try {
       if (!alarmRef.current) {
         const synth = new Synth().toDestination();
-        const loop = new Loop(time => {
-          synth.triggerAttackRelease("C5", "8n", time);
-        }, "1.5s").start(0);
+        const loop = new Loop(time => synth.triggerAttackRelease("C5", "8n", time), "1.5s").start(0);
         alarmRef.current = loop;
       }
-      if (Transport.state !== 'started') {
-        setTimeout(() => Transport.start(), 100);
-      }
-    } catch (e) {
-      console.error("Gagal memainkan alarm:", e);
-    }
+      if (Transport.state !== 'started') setTimeout(() => Transport.start(), 100);
+    } catch (e) {}
   }, []);
 
   const stopAlarm = useCallback(() => {
@@ -106,8 +89,8 @@ export default function App() {
 
   const saveHistory = useCallback(async (booking) => {
     const historyRef = ref(db, 'history');
-    const newHistoryRef = push(historyRef);
-    await set(newHistoryRef, {
+    const newRef = push(historyRef);
+    await set(newRef, {
       ...booking,
       startTime: booking.startTime.toISOString(),
       endTime: booking.endTime.toISOString(),
@@ -122,8 +105,8 @@ export default function App() {
 
   const handleCompleteSession = useCallback(async (bookingId) => {
     stopAlarm();
-    const finishedBooking = bookings.find(b => b.id === bookingId);
-    if (finishedBooking) await saveHistory(finishedBooking);
+    const done = bookings.find(b => b.id === bookingId);
+    if (done) await saveHistory(done);
     removeBooking(bookingId);
     setExpiredBooking(null);
   }, [bookings, stopAlarm, saveHistory]);
@@ -164,7 +147,7 @@ export default function App() {
           />
         </aside>
 
-        <main className="w-full md:w-2/3 lg:w-3/4 h-screen bg-gray-800/50">
+        <main className="flex-1 h-screen overflow-y-auto bg-gray-800/50">
           <BookingGrid
             bookings={bookings}
             now={now}
@@ -172,6 +155,7 @@ export default function App() {
             onCancelBooking={removeBooking}
             stats={bookingStats}
           />
+          <HistoryReportDashboard history={history} />
         </main>
 
         {expiredBooking && (
