@@ -3,8 +3,6 @@ import React, { useState } from 'react';
 export default function SidebarForm({
   activeRoomNames,
   onAddBooking,
-  formPrefill,
-  onClearPrefill,
   onShowHistory,
   currentUser
 }) {
@@ -14,12 +12,20 @@ export default function SidebarForm({
   const [durationMinutes, setDurationMinutes] = useState('');
   const [people, setPeople] = useState('');
 
+  // Fungsi filter angka biar gak bisa minus & nol
+  const sanitizeNumber = (value, allowZero = false) => {
+    if (value === '') return '';
+    const cleaned = value.replace(/[^0-9]/g, ''); // hapus semua karakter non-angka
+    if (cleaned === '') return '';
+    const num = Number(cleaned);
+    if (!allowZero && num === 0) return '';
+    return num;
+  };
+
   const handleAddBooking = () => {
     if (!room || !startTime) return alert('Pilih ruangan dan jam masuk!');
     if (!durationHours && !durationMinutes)
       return alert('Durasi tidak boleh kosong atau nol!');
-    if (Number(durationHours) < 0 || Number(durationMinutes) < 0)
-      return alert('Durasi tidak boleh negatif!');
     if (!people || Number(people) <= 0)
       return alert('Jumlah orang minimal 1!');
 
@@ -61,15 +67,6 @@ export default function SidebarForm({
     setDurationHours('');
     setDurationMinutes('');
     setPeople('');
-  };
-
-  // Fungsi input sanitizer
-  const handleNumberInput = (value, setter, allowZero = false) => {
-    if (value === '') return setter('');
-    const num = Number(value);
-    if (isNaN(num) || num < 0) return;
-    if (!allowZero && num === 0) return setter('');
-    setter(num);
   };
 
   return (
@@ -119,41 +116,43 @@ export default function SidebarForm({
         </div>
       </div>
 
+      {/* Durasi */}
       <div className="flex space-x-2">
         <div className="flex-1">
           <label className="text-sm text-gray-300">Durasi</label>
           <div className="flex space-x-2">
             <input
-              type="number"
+              type="text"
+              inputMode="numeric"
               value={durationHours}
-              onChange={(e) => handleNumberInput(e.target.value, setDurationHours)}
+              onChange={(e) => setDurationHours(sanitizeNumber(e.target.value))}
               className="w-full p-2 bg-gray-700 text-white rounded"
               placeholder="Jam"
-              min="1"
             />
             <span className="text-gray-400 self-center">Jam</span>
             <input
-              type="number"
+              type="text"
+              inputMode="numeric"
               value={durationMinutes}
-              onChange={(e) => handleNumberInput(e.target.value, setDurationMinutes, true)}
+              onChange={(e) => setDurationMinutes(sanitizeNumber(e.target.value, true))}
               className="w-full p-2 bg-gray-700 text-white rounded"
               placeholder="Menit"
-              min="0"
             />
             <span className="text-gray-400 self-center">Menit</span>
           </div>
         </div>
       </div>
 
+      {/* Jumlah Orang */}
       <div>
         <label className="text-sm text-gray-300">Jumlah Orang</label>
         <input
-          type="number"
+          type="text"
+          inputMode="numeric"
           value={people}
-          onChange={(e) => handleNumberInput(e.target.value, setPeople)}
+          onChange={(e) => setPeople(sanitizeNumber(e.target.value))}
           className="w-full mt-1 p-2 bg-gray-700 text-white rounded"
           placeholder="Masukkan jumlah tamu"
-          min="1"
         />
       </div>
 
