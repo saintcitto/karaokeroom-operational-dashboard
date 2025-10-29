@@ -1,50 +1,93 @@
-import React, { useEffect, useState } from 'react';
-import { Clock, Users } from 'lucide-react';
+import React, { useEffect, useState, useMemo } from "react";
+import { Clock, User, Trash2, AlertTriangle } from "lucide-react";
 
 export default function BookingCard({ booking, now, onExpire, onCancel }) {
-  const [remaining, setRemaining] = useState('');
+  const start = useMemo(() => new Date(booking.startTime), [booking.startTime]);
+  const end = useMemo(() => new Date(booking.endTime), [booking.endTime]);
+  const [remaining, setRemaining] = useState(end - now);
 
   useEffect(() => {
-    if (!booking?.endTime || !(booking.endTime instanceof Date)) return;
-    const diff = booking.endTime - now;
-    if (diff <= 0) {
+    const timer = setInterval(() => {
+      setRemaining(end - new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [end]);
+
+  useEffect(() => {
+    if (remaining <= 0 && !booking.expired) {
       onExpire(booking);
-      return;
     }
-    const hours = Math.floor(diff / 3600000);
-    const minutes = Math.floor((diff % 3600000) / 60000);
-    const seconds = Math.floor((diff % 60000) / 1000);
-    setRemaining(`${hours.toString().padStart(2, '0')}j ${minutes.toString().padStart(2, '0')}m ${seconds.toString().padStart(2, '0')}d`);
-  }, [now, booking, onExpire]);
+  }, [remaining, booking, onExpire]);
 
-  if (!booking || !booking.room) return null;
+  const hours = Math.floor(remaining / 3600000);
+  const minutes = Math.floor((remaining % 3600000) / 60000);
+  const seconds = Math.floor((remaining % 60000) / 1000);
 
-  const { room, startTime, endTime, duration, totalPrice, guests } = booking;
-  const safeStart = startTime instanceof Date ? startTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Invalid';
-  const safeEnd = endTime instanceof Date ? endTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Invalid';
+  const isExpiringSoon = remaining < 10 * 60 * 1000; // <10 menit
+  const isExpired = remaining <= 0;
 
   return (
-    <div className="bg-gray-800 border border-gray-700 rounded-xl p-4 shadow-lg hover:shadow-xl transition-all">
+    <div
+      className={`rounded-2xl p-5 shadow-md transition-all border ${
+        isExpired
+          ? "bg-red-900/30 border-red-600"
+          : isExpiringSoon
+          ? "bg-yellow-800/30 border-yellow-600"
+          : "bg-gray-800/50 border-gray-700"
+      } hover:shadow-lg`}
+    >
       <div className="flex items-center justify-between mb-2">
-        <h3 className="text-lg font-bold text-white">{room}</h3>
-        <Clock size={18} className="text-gray-400" />
+        <h3 className="text-xl font-bold text-white">{booking.room}</h3>
+        <span className="text-xs text-gray-400">
+          {start.toLocaleTimeString("id-ID", {
+            hour: "2-digit",
+            minute: "2-digit",
+          })}{" "}
+          -{" "}
+          {end.toLocaleTimeString("id-ID", {
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
+        </span>
       </div>
-      <div className="text-2xl font-mono text-center text-green-400 mb-3">{remaining}</div>
-      <div className="text-sm text-gray-300 space-y-1">
-        <p>{safeStart} → {safeEnd}</p>
-        <p>Durasi: {duration?.hours || 0}j {duration?.minutes || 0}m</p>
-        <p><Users size={14} className="inline-block mr-1" />Jumlah: {guests || 0} Orang</p>
+
+      <div className="flex items-center gap-2 mb-3 text-gray-300 text-sm">
+        <User size={16} />
+        <span>
+          {booking.people || 0} orang • oleh{" "}
+          <span className="font-semibold text-pink-400">
+            {booking.handledBy || "Kasir"}
+          </span>
+        </span>
       </div>
-      <div className="mt-3 border-t border-gray-700 pt-2 text-sm">
-        <p>Tarif/Jam: <span className="text-green-400 font-semibold">Rp{(totalPrice / (duration?.hours || 1)).toLocaleString()}</span></p>
-        <p>Total: <span className="text-green-500 font-bold">Rp{totalPrice?.toLocaleString() || 0}</span></p>
+
+      {isExpired ? (
+        <div className="flex items-center gap-2 text-red-400 font-semibold">
+          <AlertTriangle size={18} /> Waktu Habis
+        </div>
+      ) : (
+        <div
+          className={`text-lg font-semibold flex items-center gap-2 ${
+            isExpiringSoon ? "text-yellow-400" : "text-green-400"
+          }`}
+        >
+          <Clock size={20} />
+          <span>
+            {hours.toString().padStart(2, "0")}:
+            {minutes.toString().padStart(2, "0")}:
+            {seconds.toString().padStart(2, "0")}
+          </span>
+        </div>
+      )}
+
+      <div className="flex justify-end mt-4">
+        <button
+          onClick={() => onCancel(booking.id)}
+          className="flex items-center gap-1 bg-red-600 hover:bg-red-700 px-3 py-2 rounded-md text-sm text-white transition-colors"
+        >
+          <Trash2 size={16} /> Batalkan
+        </button>
       </div>
-      <button
-        onClick={() => onCancel(booking.id)}
-        className="mt-3 w-full bg-red-600 hover:bg-red-700 text-white text-sm py-2 rounded-lg transition"
-      >
-        Batalkan Sesi Ini
-      </button>
     </div>
   );
 }
