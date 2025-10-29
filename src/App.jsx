@@ -57,10 +57,7 @@ export default function App() {
           }));
         setBookings(parsed);
       },
-      (err) => {
-        console.error("Bookings listener error:", err);
-        setBookings([]);
-      }
+      () => setBookings([])
     );
     return () => unsubscribe();
   }, []);
@@ -93,9 +90,7 @@ export default function App() {
         alarmRef.current = loop;
       }
       if (Transport.state !== "started") Transport.start();
-    } catch (err) {
-      console.warn("Alarm start error:", err);
-    }
+    } catch {}
   }, []);
 
   const stopAlarm = useCallback(() => {
@@ -107,7 +102,6 @@ export default function App() {
     if (Transport.state === "started") Transport.stop();
   }, []);
 
-  // === CRUD Operations ===
   const addBooking = (newBooking) => {
     if (!newBooking) return;
     const path = ref(db, "bookings/" + newBooking.id);
@@ -162,19 +156,16 @@ export default function App() {
     [stopAlarm]
   );
 
-  if (!currentUser)
-    return <UserLogin onLogin={handleLogin} />;
+  if (!currentUser) return <UserLogin onLogin={handleLogin} />;
 
   const safeBookings = Array.isArray(bookings) ? bookings : [];
   const safeHistory = Array.isArray(history) ? history : [];
-
   const canViewHistory = role === ROLES.ADMIN;
   const canManageBookings = [ROLES.ADMIN, ROLES.CASHIER, ROLES.STAFF].includes(role);
 
   return (
     <KTVErrorBoundary>
       <div className="flex flex-col md:flex-row h-screen bg-gray-900 text-white font-sans">
-        {/* === Sidebar === */}
         <aside className="w-full md:w-1/3 lg:w-1/4 h-auto md:h-screen bg-gray-800 shadow-lg overflow-y-auto">
           <div className="flex items-center justify-between p-4 border-b border-gray-700">
             <span className="text-sm text-gray-300">Login sebagai:</span>
@@ -203,28 +194,55 @@ export default function App() {
           )}
         </aside>
 
-        {}
-        <main className="w-full md:w-2/3 lg:w-3/4 h-screen overflow-y-auto bg-gray-800/50">
-          {!showHistory ? (
-            <BookingGrid
-              bookings={safeBookings}
-              now={now}
-              onExpire={handleExpire}
-              onCancelBooking={(id) => id && removeBooking(id)}
-            />
-          ) : canViewHistory ? (
-            <HistoryReportDashboard
-              history={safeHistory}
-              onClose={() => setShowHistory(false)}
-            />
-          ) : (
-            <div className="flex items-center justify-center h-full text-gray-400">
-              Kamu tidak memiliki akses ke laporan historis.
+        <main className="relative w-full md:w-2/3 lg:w-3/4 h-screen overflow-y-auto bg-gray-800/50 transition-all duration-300 ease-in-out">
+          {canViewHistory && (
+            <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-3 bg-gray-800/70 backdrop-blur-md border-b border-gray-700">
+              <h2 className="text-lg font-semibold tracking-wide text-white">
+                {showHistory ? "📊 Laporan Harian" : "🎤 Pemesanan Aktif"}
+              </h2>
+              {showHistory ? (
+                <button
+                  onClick={() => {
+                    setShowHistory(false);
+                    setFormPrefill(null);
+                    setExpiredBooking(null);
+                  }}
+                  className="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white rounded-lg text-sm font-medium shadow-md hover:shadow-lg transition-all duration-300"
+                >
+                  ← Kembali ke Pemesanan
+                </button>
+              ) : (
+                <button
+                  onClick={() => setShowHistory(true)}
+                  className="px-4 py-2 bg-gradient-to-r from-fuchsia-500 to-pink-600 hover:from-fuchsia-600 hover:to-pink-700 text-white rounded-lg text-sm font-medium shadow-md hover:shadow-lg transition-all duration-300"
+                >
+                  📈 Lihat Laporan Harian
+                </button>
+              )}
             </div>
           )}
+
+          <div className="transition-all duration-500 ease-in-out">
+            {showHistory && canViewHistory ? (
+              <HistoryReportDashboard
+                history={safeHistory}
+                onClose={() => {
+                  setShowHistory(false);
+                  setFormPrefill(null);
+                  setExpiredBooking(null);
+                }}
+              />
+            ) : (
+              <BookingGrid
+                bookings={safeBookings}
+                now={now}
+                onExpire={handleExpire}
+                onCancelBooking={(id) => id && removeBooking(id)}
+              />
+            )}
+          </div>
         </main>
 
-        {}
         {expiredBooking && (
           <ExpiredModal
             booking={expiredBooking}
