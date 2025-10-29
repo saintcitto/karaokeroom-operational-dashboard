@@ -1,161 +1,155 @@
-import React, { useEffect, useState } from 'react';
-import { getDatabase, ref, onValue } from 'firebase/database';
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LabelList
-} from 'recharts';
-import { TrendingUp, Clock } from 'lucide-react';
+import React, { useMemo } from "react";
+import { Card, CardContent } from "@/components/ui/card";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
-const HistoryReportDashboard = () => {
-  const [history, setHistory] = useState([]);
-  const [summary, setSummary] = useState({
-    totalMorning: 0,
-    totalEvening: 0,
-    totalToday: 0,
-    topCashier: null,
-  });
+export default function HistoryReportDashboard({ history = [] }) {
+  const today = new Date();
+  const todayStr = today.toISOString().split("T")[0];
 
-  useEffect(() => {
-    const db = getDatabase();
-    const historyRef = ref(db, 'history');
-
-    onValue(historyRef, (snapshot) => {
-      const data = snapshot.val() || {};
-      const list = Object.values(data);
-
-      const now = new Date();
-      const todayStr = now.toISOString().slice(0, 10);
-      const todayHistory = list.filter((h) => h.date?.startsWith(todayStr));
-
-      const morning = todayHistory.filter((h) => new Date(h.startTime).getHours() < 18);
-      const evening = todayHistory.filter((h) => new Date(h.startTime).getHours() >= 18);
-
-      const totalMorning = morning.reduce((sum, h) => sum + (h.totalPrice || 0), 0);
-      const totalEvening = evening.reduce((sum, h) => sum + (h.totalPrice || 0), 0);
-
-      const totalByCashier = {};
-      todayHistory.forEach((h) => {
-        if (!totalByCashier[h.cashier]) totalByCashier[h.cashier] = 0;
-        totalByCashier[h.cashier] += 1;
-      });
-
-      const topCashier = Object.entries(totalByCashier).sort((a, b) => b[1] - a[1])[0]?.[0] || '-';
-
-      setSummary({
-        totalMorning,
-        totalEvening,
-        totalToday: totalMorning + totalEvening,
-        topCashier,
-      });
-
-      setHistory(todayHistory);
+  const filtered = useMemo(() => {
+    return history.filter((item) => {
+      const finishDate = new Date(item.finishedAt);
+      return finishDate.toISOString().startsWith(todayStr);
     });
-  }, []);
+  }, [history, todayStr]);
 
-  const chartData = Object.entries(
-    history.reduce((acc, h) => {
-      acc[h.cashier] = (acc[h.cashier] || 0) + 1;
-      return acc;
-    }, {})
-  ).map(([cashier, transaksi]) => ({ cashier, transaksi }));
+  const shiftData = useMemo(() => {
+    let pagi = 0;
+    let malam = 0;
+    let kasirTotals = {};
+
+    filtered.forEach((entry) => {
+      const finishTime = new Date(entry.finishedAt);
+      const hour = finishTime.getHours();
+      const minute = finishTime.getMinutes();
+      const total = parseInt(entry.totalPrice) || 0;
+
+      
+      const isShiftPagi =
+        (hour > 9 && hour < 16) || (hour === 16 && minute < 45);
+      const isShiftMalam =
+        (hour > 16 || (hour === 16 && minute >= 45)) && hour <= 23;
+
+      if (isShiftPagi) pagi += total;
+      else if (isShiftMalam) malam += total;
+
+      // Kasir
+      if (entry.handledBy) {
+        kasirTotals[entry.handledBy] =
+          (kasirTotals[entry.handledBy] || 0) + total;
+      }
+    });
+
+    const kasirChart = Object.entries(kasirTotals).map(([kasir, total]) => ({
+      kasir,
+      total,
+    }));
+
+    return { pagi, malam, total: pagi + malam, kasirChart };
+  }, [filtered]);
 
   return (
-    <div className="text-white p-6 space-y-6">
-      <h2 className="text-2xl font-bold flex items-center gap-2 mb-4">
-        <TrendingUp className="text-blue-400" /> Laporan Harian
-      </h2>
-
-      {/* Summary Section */}
+    <div className="flex flex-col gap-6 text-gray-100">
+      {/* --- SHIFT SUMMARY CARDS --- */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-gradient-to-br from-blue-900 to-blue-700 rounded-xl p-4 shadow-lg">
-          <h3 className="text-gray-300 text-sm">Pendapatan Shift Pagi</h3>
-          <p className="text-2xl font-semibold text-green-400">
-            Rp {summary.totalMorning.toLocaleString('id-ID')}
-          </p>
-        </div>
-        <div className="bg-gradient-to-br from-violet-900 to-violet-700 rounded-xl p-4 shadow-lg">
-          <h3 className="text-gray-300 text-sm">Pendapatan Shift Malam</h3>
-          <p className="text-2xl font-semibold text-green-400">
-            Rp {summary.totalEvening.toLocaleString('id-ID')}
-          </p>
-        </div>
-        <div className="bg-gradient-to-br from-gray-800 to-gray-700 rounded-xl p-4 shadow-lg">
-          <h3 className="text-gray-300 text-sm">Total Pendapatan Hari Ini</h3>
-          <p className="text-2xl font-semibold text-yellow-400">
-            Rp {summary.totalToday.toLocaleString('id-ID')}
-          </p>
-        </div>
+        <Card className="bg-gradient-to-r from-green-700/20 to-emerald-500/10 border border-green-500/40 rounded-xl backdrop-blur-sm">
+          <CardContent className="p-5">
+            <p className="text-sm text-gray-400">Pendapatan Shift Pagi (10.00 - 16.44)</p>
+            <h2 className="text-2xl font-bold text-green-400 mt-1">
+              Rp {shiftData.pagi.toLocaleString("id-ID")}
+            </h2>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gradient-to-r from-indigo-700/20 to-fuchsia-500/10 border border-indigo-500/40 rounded-xl backdrop-blur-sm">
+          <CardContent className="p-5">
+            <p className="text-sm text-gray-400">Pendapatan Shift Malam (16.45 - 00.00)</p>
+            <h2 className="text-2xl font-bold text-indigo-400 mt-1">
+              Rp {shiftData.malam.toLocaleString("id-ID")}
+            </h2>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gradient-to-r from-gray-700/50 to-gray-800/30 border border-gray-600/40 rounded-xl backdrop-blur-sm">
+          <CardContent className="p-5">
+            <p className="text-sm text-gray-400">Total Pendapatan Hari Ini</p>
+            <h2 className="text-2xl font-bold text-yellow-400 mt-1">
+              Rp {shiftData.total.toLocaleString("id-ID")}
+            </h2>
+          </CardContent>
+        </Card>
       </div>
 
-      {/* Chart Section */}
-      <div className="bg-gray-800 p-4 rounded-xl shadow-lg">
-        <h3 className="font-semibold text-gray-200 mb-3">📊 Grafik Transaksi per Kasir</h3>
-        <ResponsiveContainer width="100%" height={250}>
-          <BarChart
-            data={chartData}
-            margin={{ top: 10, right: 30, left: 0, bottom: 10 }}
-            barCategoryGap="30%"
-          >
-            <CartesianGrid strokeDasharray="3 3" stroke="#444" />
-            <XAxis dataKey="cashier" stroke="#aaa" />
-            <YAxis stroke="#aaa" />
-            <Tooltip
-              cursor={{ fill: 'rgba(255,255,255,0.05)' }}
-              contentStyle={{
-                backgroundColor: '#1f2937',
-                borderRadius: '8px',
-                border: '1px solid #333',
-              }}
-            />
-            <Bar dataKey="transaksi" fill="url(#colorUv)" radius={[6, 6, 0, 0]}>
-              <LabelList dataKey="transaksi" position="top" fill="#fff" />
-            </Bar>
-            <defs>
-              <linearGradient id="colorUv" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#60a5fa" stopOpacity={0.9} />
-                <stop offset="95%" stopColor="#7c3aed" stopOpacity={0.6} />
-              </linearGradient>
-            </defs>
-          </BarChart>
-        </ResponsiveContainer>
-        <p className="text-sm mt-3 text-gray-400">
-          🏆 Kasir paling aktif hari ini: <span className="text-pink-400 font-semibold">{summary.topCashier}</span>
-        </p>
-      </div>
+      {}
+      <Card className="bg-gray-800/70 border border-gray-700/50 rounded-xl backdrop-blur-sm">
+        <CardContent className="p-6">
+          <h3 className="text-lg font-semibold mb-4 text-gray-100">
+            Grafik Transaksi per Kasir
+          </h3>
+          {shiftData.kasirChart.length > 0 ? (
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={shiftData.kasirChart}>
+                <XAxis dataKey="kasir" stroke="#9ca3af" />
+                <YAxis stroke="#9ca3af" />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "#1f2937",
+                    border: "1px solid #374151",
+                    borderRadius: "8px",
+                    color: "#fff",
+                  }}
+                />
+                <Bar dataKey="total" fill="#8b5cf6" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <p className="text-gray-400 text-sm text-center">
+              Belum ada transaksi untuk hari ini.
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
-      {/* Activity List */}
-      <div className="bg-gray-800 p-5 rounded-xl shadow-md">
-        <h3 className="font-semibold text-gray-200 mb-3 flex items-center gap-2">
-          <Clock size={18} /> Aktivitas Pemesanan Hari Ini
-        </h3>
-        {history.length === 0 ? (
-          <p className="text-gray-500 text-center py-4">Belum ada transaksi hari ini.</p>
-        ) : (
-          <div className="space-y-3">
-            {history
-              .sort((a, b) => new Date(b.startTime) - new Date(a.startTime))
-              .map((item, idx) => (
-                <div
-                  key={idx}
-                  className="bg-gray-700/60 rounded-lg p-3 flex justify-between items-center hover:bg-gray-600/60 transition-colors"
-                >
-                  <div>
-                    <p className="text-sm text-gray-200">
-                      <span className="font-semibold text-blue-400">{item.cashier}</span> - {item.room}
-                    </p>
-                    <p className="text-xs text-gray-400">
-                      {new Date(item.startTime).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} · {item.people} orang
-                    </p>
+      {}
+      <Card className="bg-gray-800/70 border border-gray-700/50 rounded-xl backdrop-blur-sm">
+        <CardContent className="p-6">
+          <h3 className="text-lg font-semibold mb-4 text-gray-100">
+            Aktivitas Pemesanan Hari Ini
+          </h3>
+          {filtered.length > 0 ? (
+            <div className="space-y-3 max-h-72 overflow-y-auto">
+              {filtered.map((entry) => {
+                const t = new Date(entry.finishedAt);
+                const time = t.toLocaleTimeString("id-ID", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                });
+                return (
+                  <div
+                    key={entry.id}
+                    className="flex justify-between items-center bg-gray-900/60 px-4 py-3 rounded-lg border border-gray-700/50 hover:bg-gray-900/80 transition-all"
+                  >
+                    <div>
+                      <p className="text-sm font-medium text-white">
+                        {entry.room}
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        Kasir: {entry.handledBy} • Rp{" "}
+                        {entry.totalPrice.toLocaleString("id-ID")}
+                      </p>
+                    </div>
+                    <span className="text-xs text-gray-500">{time}</span>
                   </div>
-                  <p className="text-sm font-semibold text-green-400">
-                    Rp {item.totalPrice.toLocaleString('id-ID')}
-                  </p>
-                </div>
-              ))}
-          </div>
-        )}
-      </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-gray-400 text-sm text-center">
+              Belum ada aktivitas pemesanan hari ini.
+            </p>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
-};
-
-export default HistoryReportDashboard;
+}
