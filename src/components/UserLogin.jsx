@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { Synth } from "tone";
+import * as Tone from "tone";
 
 export default function UserLogin({ onLogin }) {
   const users = [
@@ -12,36 +12,39 @@ export default function UserLogin({ onLogin }) {
   ];
 
   useEffect(() => {
-    const body = document.querySelector("body");
-    body.style.background =
+    document.body.style.background =
       "radial-gradient(circle at center, #191926 0%, #0c0c14 100%)";
-    body.style.transition = "background 0.8s ease-in-out";
+    document.body.style.transition = "background 0.8s ease-in-out";
     return () => {
-      body.style.background = "";
+      document.body.style.background = "";
     };
   }, []);
 
-  const playClickSound = async () => {
-    try {
-      const synth = new Synth().toDestination();
-      await Tone.start();
-      synth.triggerAttackRelease("A5", "16n");
-    } catch (e) {
-      console.warn("Sound init failed:", e);
-    }
-  };
-
   const handleLoginClick = async (user) => {
-    await playClickSound();
-    setTimeout(() => {
-      onLogin(user);
-    }, 200);
+    try {
+      // aktifkan audio context dulu (wajib untuk iOS/Safari/Chrome policy)
+      await Tone.start();
+
+      // buat suara "click synth"
+      const synth = new Tone.Synth().toDestination();
+      synth.triggerAttackRelease("A5", "16n");
+
+      // delay biar ada efek UX pas klik
+      setTimeout(() => {
+        onLogin(user);
+      }, 250);
+    } catch (err) {
+      console.warn("Audio init failed:", err);
+      onLogin(user); // fallback tanpa suara
+    }
   };
 
   return (
     <div className="flex items-center justify-center h-screen relative overflow-hidden">
+      {/* background ambient */}
       <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-blue-900/10 via-fuchsia-900/10 to-indigo-900/10 blur-3xl"></div>
 
+      {/* main login card */}
       <div className="relative bg-gray-800/90 backdrop-blur-md p-8 rounded-2xl shadow-2xl w-[22rem] border border-gray-700/60 text-center animate-fadeIn">
         <h1 className="text-3xl font-extrabold mb-4 bg-gradient-to-r from-fuchsia-400 via-pink-400 to-purple-400 text-transparent bg-clip-text drop-shadow-lg">
           Karaoke Room Dashboard
@@ -57,7 +60,7 @@ export default function UserLogin({ onLogin }) {
               onClick={() => handleLoginClick(user.name)}
               className="w-full py-2.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-fuchsia-600 
               hover:from-fuchsia-600 hover:to-pink-600 text-white rounded-lg font-semibold tracking-wide 
-              shadow-md hover:shadow-xl hover:scale-[1.03] active:scale-[0.98] 
+              shadow-md hover:shadow-xl hover:scale-[1.03] active:scale-[0.97] 
               transition-all duration-300 ease-out focus:ring-2 focus:ring-pink-500/50"
             >
               {user.name}
@@ -71,6 +74,7 @@ export default function UserLogin({ onLogin }) {
         </p>
       </div>
 
+      {/* subtle glow */}
       <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-tr from-fuchsia-500/5 to-blue-600/5 animate-gradientMove"></div>
 
       <style>{`
