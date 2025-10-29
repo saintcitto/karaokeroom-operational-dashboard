@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Synth, Loop, Transport } from 'tone';
-import { getBookingStatus, formatTimeForInput } from './utils/helpers';
+import { formatTimeForInput } from './utils/helpers';
 import KTVErrorBoundary from './components/KTVErrorBoundary';
 import SidebarForm from './components/SidebarForm';
 import BookingGrid from './components/BookingGrid';
@@ -20,8 +20,8 @@ export default function App() {
 
   useEffect(() => {
     if (!currentUser) return;
-    const timerId = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(timerId);
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
   }, [currentUser]);
 
   useEffect(() => {
@@ -29,14 +29,14 @@ export default function App() {
     const bookingsRef = ref(db, 'bookings');
     const unsubscribe = onValue(bookingsRef, (snapshot) => {
       const data = snapshot.val() || {};
-      const validBookings = Object.values(data)
+      const valid = Object.values(data)
         .filter(b => b && b.room && b.startTime && b.endTime)
         .map(b => ({
           ...b,
           startTime: new Date(b.startTime),
           endTime: new Date(b.endTime),
         }));
-      setBookings(validBookings);
+      setBookings(valid);
     });
     return () => unsubscribe();
   }, [currentUser]);
@@ -99,13 +99,13 @@ export default function App() {
   }, [startAlarm]);
 
   const handleCompleteSession = useCallback((bookingId) => {
-    const finishedBooking = bookings.find(b => b.id === bookingId);
-    if (finishedBooking) {
+    const finished = bookings.find(b => b.id === bookingId);
+    if (finished) {
       const dateKey = new Date().toISOString().split('T')[0];
       const shift = new Date().getHours() < 17 ? 'pagi' : 'malam';
       const historyRef = push(ref(db, `history/${dateKey}/sessions`));
       set(historyRef, {
-        ...finishedBooking,
+        ...finished,
         finishedAt: new Date().toISOString(),
         shift,
         handledBy: currentUser
@@ -114,18 +114,18 @@ export default function App() {
       onValue(totalsRef, (snapshot) => {
         const current = snapshot.val() || { pagi: 0, malam: 0, total: 0 };
         const updated = {
-          pagi: shift === 'pagi' ? current.pagi + finishedBooking.totalPrice : current.pagi,
-          malam: shift === 'malam' ? current.malam + finishedBooking.totalPrice : current.malam,
-          total: current.total + finishedBooking.totalPrice
+          pagi: shift === 'pagi' ? current.pagi + (finished.totalPrice || 0) : current.pagi,
+          malam: shift === 'malam' ? current.malam + (finished.totalPrice || 0) : current.malam,
+          total: current.total + (finished.totalPrice || 0)
         };
         set(totalsRef, updated);
       }, { onlyOnce: true });
       const logRef = push(ref(db, 'logs'));
       set(logRef, {
         type: 'SESSION_COMPLETED',
-        room: finishedBooking.room,
+        room: finished.room,
         handledBy: currentUser,
-        totalPrice: finishedBooking.totalPrice,
+        totalPrice: finished.totalPrice,
         timestamp: new Date().toISOString()
       });
     }
@@ -142,8 +142,7 @@ export default function App() {
     removeBooking(booking.id);
   }, [stopAlarm]);
 
-  if (!currentUser)
-    return <UserLogin onLogin={(user) => setCurrentUser(user)} />;
+  if (!currentUser) return <UserLogin onLogin={(user) => setCurrentUser(user)} />;
 
   return (
     <KTVErrorBoundary>
