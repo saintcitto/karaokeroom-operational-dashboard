@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Sun, Moon, Calendar, Timer, Users, Trash2, X } from 'lucide-react';
+import { Sun, Moon, Calendar, Timer, Users, Trash2, X, Gift } from 'lucide-react';
 import { formatCurrency, formatTime, formatDuration, getBookingStatus } from '../utils/helpers';
 import { TARIF_PRIME_TIME } from '../data/constants';
 
@@ -18,12 +18,11 @@ const BookingCard = ({ booking, now, onExpire, onCancel }) => {
       const detik = sisaDetik % 60;
       sisaWaktuStr = `${String(jam).padStart(2, '0')}j ${String(menit).padStart(2, '0')}m ${String(detik).padStart(2, '0')}d`;
     }
-    
+
     const status = getBookingStatus(booking.endTime, now);
-    
     return { status, sisaWaktuStr };
-  }, [booking.endTime, now, booking.endTime, now]);
-  
+  }, [booking.endTime, now]);
+
   const [hasExpired, setHasExpired] = useState(false);
   const [isConfirmingCancel, setIsConfirmingCancel] = useState(false);
 
@@ -50,14 +49,14 @@ const BookingCard = ({ booking, now, onExpire, onCancel }) => {
           {isPrimeTime ? 'Prime Time' : 'Happy Hour'}
         </span>
       </div>
-      
+
       <div className="text-center my-2 p-3 bg-black/20 rounded-lg">
         <div className="text-xs text-gray-400 uppercase">Sisa Waktu</div>
         <div className={`text-3xl font-bold ${status === 'warning' && 'text-yellow-300'} ${status === 'expired' && 'text-red-400'}`}>
           {sisaWaktuStr}
         </div>
       </div>
-      
+
       <div className="space-y-2 text-sm mt-4">
         <div className="flex items-center gap-2">
           {isPrimeTime ? <Moon size={16} className="text-purple-400" /> : <Sun size={16} className="text-yellow-400" />}
@@ -69,31 +68,41 @@ const BookingCard = ({ booking, now, onExpire, onCancel }) => {
         </div>
         <div className="flex items-center gap-2">
           <Timer size={16} className="text-gray-400" />
-          <span>Durasi: {formatDuration(booking.durationInMinutes)}</span>
+          <span>
+            Durasi: {formatDuration(booking.durationInMinutes + (booking.freeMinutes || 0))}
+          </span>
         </div>
+        {booking.promoNote && booking.promoNote !== '-' && (
+          <div className="flex items-center gap-1 text-blue-400 text-xs mt-1">
+            <Gift size={14} className="text-blue-400" />
+            <span>Promo: {booking.promoNote}</span>
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <Users size={16} className="text-gray-400" />
           <span>Jumlah: {booking.people} Orang</span>
         </div>
       </div>
-      
+
       <div className="mt-4 pt-3 border-t border-gray-700/50 space-y-1">
         <div className="flex justify-between text-sm">
           <span className="text-gray-400">Tarif / Jam:</span>
           <span className="font-medium">{formatCurrency(booking.tarif)}</span>
         </div>
+
         {booking.overCapacityCharge > 0 && (
           <div className="flex justify-between text-sm">
             <span className="text-gray-400">Over Charge:</span>
             <span className="font-medium text-yellow-400">{formatCurrency(booking.overCapacityCharge)}</span>
           </div>
         )}
+
         <div className="flex justify-between text-lg">
           <span className="text-gray-300 font-bold">Total Harga:</span>
           <span className="font-bold text-green-400">{formatCurrency(booking.totalPrice)}</span>
         </div>
       </div>
-      
+
       {status !== 'expired' && (
         <div className="mt-4 pt-3 border-t border-gray-600">
           {!isConfirmingCancel ? (
@@ -130,7 +139,6 @@ const BookingCard = ({ booking, now, onExpire, onCancel }) => {
           )}
         </div>
       )}
-      
     </div>
   );
 };
