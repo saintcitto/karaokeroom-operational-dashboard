@@ -1,117 +1,132 @@
-import React, { useState, useEffect } from "react";
+import React from "react";
+import { motion, useAnimation } from "framer-motion";
 import { start as ToneStart, context as ToneContext } from "tone";
-import { getAuth, signInWithEmailAndPassword, onAuthStateChanged } from "firebase/auth";
 
 export default function UserLogin({ onLogin }) {
-  const [adminMode, setAdminMode] = useState(false);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const auth = getAuth();
-
   const users = [
-    { name: "Baya Ganteng", role: "Admin" },
-    { name: "Ayu", role: "Kasir" },
-    { name: "Ridho", role: "Kasir" },
-    { name: "Umi", role: "Kasir" },
-    { name: "Faisal", role: "Petugas Karaoke" },
-    { name: "Zahlul", role: "Petugas Karaoke" },
+    { id: "USR-001", name: "Baya Ganteng", role: "Admin" },
+    { id: "USR-002", name: "Ayu", role: "Kasir" },
+    { id: "USR-003", name: "Ridho", role: "Kasir" },
+    { id: "USR-004", name: "Umi", role: "Kasir" },
+    { id: "USR-005", name: "Faisal", role: "Petugas Karaoke" },
+    { id: "USR-006", name: "Zahlul", role: "Petugas Karaoke" },
   ];
-
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (firebaseUser) => {
-      if (firebaseUser) {
-        console.log("✅ Firebase Admin Auth aktif:", firebaseUser.email);
-      } else {
-        console.warn("⚠️ Admin belum login ke Firebase Auth");
-      }
-    });
-    return () => unsub();
-  }, []);
 
   const unlockAudio = async (user) => {
     try {
       await ToneStart();
       await ToneContext.resume();
-    } catch (err) {
-      console.warn("Audio unlock failed:", err);
-    }
-    if (user === "Baya Ganteng") setAdminMode(true);
-    else onLogin(user);
+    } catch {}
+    onLogin(user.name);
   };
-
-  const handleAdminLogin = async () => {
-    setLoading(true);
-    setError("");
-    try {
-      await signInWithEmailAndPassword(auth, email, password);
-      localStorage.setItem("currentUser", "Baya Ganteng");
-      onLogin("Baya Ganteng");
-    } catch (err) {
-      console.error("❌ Admin login failed:", err);
-      setError("Email atau password salah.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (adminMode) {
-    return (
-      <div className="h-screen flex flex-col items-center justify-center bg-gray-900 text-white">
-        <h2 className="text-xl font-semibold mb-4 text-pink-400">Login Admin</h2>
-        <div className="w-72 space-y-3">
-          <input
-            type="email"
-            placeholder="Email Admin"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full p-3 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:ring-2 focus:ring-pink-500 outline-none"
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full p-3 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:ring-2 focus:ring-pink-500 outline-none"
-          />
-          {error && <p className="text-red-400 text-xs">{error}</p>}
-          <button
-            onClick={handleAdminLogin}
-            disabled={loading}
-            className="w-full py-3 bg-pink-600 hover:bg-pink-700 rounded-lg font-semibold text-sm transition-all duration-300 disabled:opacity-50"
-          >
-            {loading ? "Memproses..." : "Login Admin"}
-          </button>
-          <button
-            onClick={() => setAdminMode(false)}
-            className="w-full text-xs text-gray-400 hover:text-gray-200 mt-2"
-          >
-            ← Kembali ke daftar pengguna
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   return (
-    <div className="h-screen flex flex-col items-center justify-center bg-gray-900 text-white">
-      <h1 className="text-2xl font-bold mb-6 text-pink-400 tracking-wide">
+    <div className="h-screen flex flex-col items-center justify-center bg-gray-950 text-white overflow-hidden">
+      <h1 className="text-3xl font-bold mb-10 text-pink-400 tracking-wide drop-shadow-[0_0_12px_rgba(244,114,182,0.3)]">
         🎤 Karaoke Sonia Operational Dashboard
       </h1>
+
       <div className="grid grid-cols-2 gap-4 w-80">
         {users.map((user) => (
-          <button
-            key={user.name}
-            onClick={() => unlockAudio(user.name)}
-            className="px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg hover:bg-pink-600 hover:border-pink-500 text-sm font-medium text-white transition-all duration-200 shadow-lg hover:shadow-pink-500/20"
+          <motion.button
+            key={user.id}
+            whileHover={{
+              scale: 1.08,
+              boxShadow: "0 0 15px rgba(244,114,182,0.4)",
+              backgroundColor: "rgba(236,72,153,0.15)",
+            }}
+            whileTap={{ scale: 0.96 }}
+            onClick={() => unlockAudio(user)}
+            className="px-4 py-3 bg-gray-900 border border-gray-700 rounded-xl hover:border-pink-500 text-sm font-medium text-white transition-all duration-200 shadow-lg hover:shadow-pink-500/30 relative group"
           >
-            {user.name}
+            <span className="text-white">{user.name}</span>
             <div className="text-[11px] text-gray-400">{user.role}</div>
-          </button>
+            <motion.span
+              initial={{ opacity: 0, y: 5 }}
+              whileHover={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="absolute bottom-1 right-2 text-[10px] text-gray-500 group-hover:text-pink-400"
+            >
+              #{user.id}
+            </motion.span>
+          </motion.button>
         ))}
       </div>
-      <footer className="absolute bottom-6 text-sm text-gray-500">sweet cherry pie 🍰</footer>
+
+      {/* 🌌 Living Footer */}
+      <footer className="absolute bottom-8 w-full flex items-center justify-center">
+        <LivingFooter />
+      </footer>
     </div>
+  );
+}
+
+function LivingFooter() {
+  const controls = useAnimation();
+
+  React.useEffect(() => {
+    const pulse = async () => {
+      while (true) {
+        await controls.start({
+          textShadow: [
+            "0 0 0px rgba(244,114,182,0)",
+            "0 0 12px rgba(244,114,182,0.4)",
+            "0 0 20px rgba(244,114,182,0.6)",
+            "0 0 0px rgba(244,114,182,0)",
+          ],
+          opacity: [0.6, 1, 0.9, 1],
+          scale: [1, 1.03, 1],
+          transition: { duration: 6, ease: "easeInOut" },
+        });
+      }
+    };
+    pulse();
+  }, [controls]);
+
+  return (
+    <motion.div
+      animate={controls}
+      className="font-light tracking-[0.2em] text-gray-400 select-none relative"
+    >
+      {Array.from("sweet cherry pie").map((char, i) => (
+        <motion.span
+          key={i}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: i * 0.08, duration: 0.4, ease: "easeOut" }}
+          className={char === " " ? "inline-block w-1" : "inline-block"}
+        >
+          {char}
+        </motion.span>
+      ))}
+      <motion.span
+        animate={{
+          rotate: [0, 15, -15, 10, -10, 0],
+          scale: [1, 1.1, 1],
+          y: [0, -2, 0],
+        }}
+        transition={{
+          duration: 8,
+          repeat: Infinity,
+          ease: "easeInOut",
+        }}
+        className="inline-block ml-2 text-pink-400 drop-shadow-[0_0_10px_rgba(244,114,182,0.5)]"
+      >
+        🍰
+      </motion.span>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{
+          opacity: [0.05, 0.2, 0.05],
+          scale: [1, 1.05, 1],
+        }}
+        transition={{
+          duration: 10,
+          repeat: Infinity,
+          ease: "easeInOut",
+        }}
+        className="absolute -bottom-4 left-1/2 -translate-x-1/2 w-36 h-[1px] bg-gradient-to-r from-transparent via-pink-400/40 to-transparent blur-[2px]"
+      />
+    </motion.div>
   );
 }
