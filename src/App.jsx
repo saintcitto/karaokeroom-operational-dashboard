@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { Synth, Loop, Transport, start as ToneStart } from "tone";
+import { PolySynth, Filter, LFO, Transport, start as ToneStart } from "tone";
 import { formatTimeForInput } from "./utils/helpers";
 import KTVErrorBoundary from "./components/KTVErrorBoundary";
 import SidebarForm from "./components/SidebarForm";
@@ -103,7 +103,10 @@ export default function App() {
     }
   }, [bookings, expiredBooking]);
 
-  const handleLogin = (user) => {
+  const handleLogin = async (user) => {
+    try {
+      await ToneStart(); // unlock audio context at login
+    } catch {}
     localStorage.setItem("currentUser", user);
     setCurrentUser(user);
     setRole(USER_ROLES[user] || null);
@@ -113,31 +116,37 @@ export default function App() {
     try {
       await ToneStart();
       if (!alarmRef.current) {
-        const synth = new Synth({
-          oscillator: { type: "triangle" },
-          envelope: { attack: 0.05, decay: 0.1, sustain: 0.4, release: 0.6 },
-        }).toDestination();
-        const loop = new Loop(
-          (time) => {
-            synth.triggerAttackRelease("A5", "8n", time);
-            synth.triggerAttackRelease("E6", "8n", time + 0.2);
-          },
-          "1.2s"
-        ).start(0);
-        alarmRef.current = loop;
+        const synth = new PolySynth().toDestination();
+        const filter = new Filter(800, "lowpass").toDestination();
+        synth.connect(filter);
+        const lfo = new LFO("2n", 400, 1600).start();
+        lfo.connect(filter.frequency);
+
+        const playPattern = () => {
+          const now = Tone.now();
+          synth.triggerAttackRelease(["A5", "E6"], "8n", now);
+          synth.triggerAttackRelease(["C6", "G5"], "8n", now + 0.4);
+        };
+
+        Transport.scheduleRepeat(playPattern, "1.2s");
+        Transport.start();
+        alarmRef.current = { synth, filter, lfo };
       }
-      if (Transport.state !== "started") Transport.start();
-    } catch {}
+    } catch (err) {
+      console.warn("Alarm start error:", err);
+    }
   }, []);
 
   const stopAlarm = useCallback(() => {
     try {
       if (alarmRef.current) {
-        alarmRef.current.stop();
-        alarmRef.current.dispose();
+        alarmRef.current.lfo.stop();
+        alarmRef.current.synth.dispose();
+        alarmRef.current.filter.dispose();
         alarmRef.current = null;
       }
       if (Transport.state === "started") Transport.stop();
+      Transport.cancel();
     } catch {}
   }, []);
 
