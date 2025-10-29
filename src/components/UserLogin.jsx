@@ -73,4 +73,5 @@ export function LivingFooter() {
     </footer>
   );
 }
+
 export default UserLogin;
