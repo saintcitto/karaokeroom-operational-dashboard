@@ -9,7 +9,7 @@ const SidebarForm = ({ activeRoomNames, onAddBooking }) => {
   const [startTime, setStartTime] = useState('');
   const [durationHours, setDurationHours] = useState(1);
   const [durationMinutes, setDurationMinutes] = useState(0);
-  const [people, setPeople] = useState(0);
+  const [people, setPeople] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -44,9 +44,11 @@ const SidebarForm = ({ activeRoomNames, onAddBooking }) => {
 
     const startTimeDate = new Date();
     startTimeDate.setHours(startH, startM, 0, 0);
-    const endTimeDate = new Date(startTimeDate.getTime() + durationTotalMinutes * 60000);
 
-    const priceData = calculateTotalPriceWithPromo(startTimeDate, durationTotalMinutes, people);
+    const priceData = calculateTotalPriceWithPromo(startTimeDate, durationTotalMinutes, Number(people) || 0);
+
+    const totalPlayMinutes = durationTotalMinutes + (priceData.freeMinutes || 0);
+    const endTimeDate = new Date(startTimeDate.getTime() + totalPlayMinutes * 60000);
 
     const newBooking = {
       id: `booking_${Date.now()}`,
@@ -58,7 +60,8 @@ const SidebarForm = ({ activeRoomNames, onAddBooking }) => {
       hargaWaktu: priceData.hargaWaktu,
       biayaTambahan: priceData.biayaTambahan,
       totalPrice: priceData.total,
-      people,
+      people: Number(people) || 0,
+      freeMinutes: priceData.freeMinutes,
       promoNote: priceData.promoNote,
     };
 
@@ -67,7 +70,7 @@ const SidebarForm = ({ activeRoomNames, onAddBooking }) => {
     setStartTime('');
     setDurationHours(1);
     setDurationMinutes(0);
-    setPeople(0);
+    setPeople('');
   };
 
   return (
@@ -144,10 +147,11 @@ const SidebarForm = ({ activeRoomNames, onAddBooking }) => {
         <input
           type="number"
           id="people"
+          placeholder="0"
           value={people}
-          onChange={(e) => setPeople(Math.max(0, Number(e.target.value)))}
+          onChange={(e) => setPeople(e.target.value)}
           min="0"
-          className="w-full bg-gray-700 border border-gray-600 text-white rounded-md p-2"
+          className="w-full bg-gray-700 border border-gray-600 text-white rounded-md p-2 placeholder-gray-500"
         />
         <small className="text-gray-400 text-xs">
           Tambahan Rp5.000 jika tamu lebih dari 10 orang (tidak dikali jumlah orang, berlaku semua jam).
@@ -170,7 +174,7 @@ const SidebarForm = ({ activeRoomNames, onAddBooking }) => {
       </button>
 
       <p className="text-xs text-gray-400 mt-2">
-        Promo otomatis: 30 menit gratis untuk durasi ≥ 2 jam, dan 1 jam gratis untuk durasi ≥ 3 jam.
+        Promo otomatis: 30 menit gratis untuk durasi 2 jam, dan 1 jam gratis untuk durasi 3 jam.
       </p>
     </form>
   );
