@@ -10,30 +10,39 @@ export default function SidebarForm({
 }) {
   const [room, setRoom] = useState('');
   const [startTime, setStartTime] = useState('');
-  const [durationHours, setDurationHours] = useState(1);
-  const [durationMinutes, setDurationMinutes] = useState(0);
-  const [people, setPeople] = useState(0);
+  const [durationHours, setDurationHours] = useState('');
+  const [durationMinutes, setDurationMinutes] = useState('');
+  const [people, setPeople] = useState('');
 
   const handleAddBooking = () => {
-    if (!room || !startTime) return;
+    if (!room || !startTime) return alert('Pilih ruangan dan jam masuk!');
+    if (!durationHours && !durationMinutes)
+      return alert('Durasi tidak boleh kosong atau nol!');
+    if (Number(durationHours) < 0 || Number(durationMinutes) < 0)
+      return alert('Durasi tidak boleh negatif!');
+    if (!people || Number(people) <= 0)
+      return alert('Jumlah orang minimal 1!');
 
     const start = new Date();
     const [hour, minute] = startTime.split(':').map(Number);
     start.setHours(hour, minute, 0, 0);
 
-    // promo otomatis
+    const durHours = Number(durationHours) || 0;
+    const durMinutes = Number(durationMinutes) || 0;
+
     let bonusMinutes = 0;
-    if (durationHours >= 3) bonusMinutes = 60;
-    else if (durationHours >= 2) bonusMinutes = 30;
+    if (durHours >= 3) bonusMinutes = 60;
+    else if (durHours >= 2) bonusMinutes = 30;
 
-    const end = new Date(start.getTime() + ((durationHours * 60 + durationMinutes + bonusMinutes) * 60000));
+    const totalMinutes = durHours * 60 + durMinutes + bonusMinutes;
+    const end = new Date(start.getTime() + totalMinutes * 60000);
 
-    const totalHours = durationHours + durationMinutes / 60;
+    const totalHours = totalMinutes / 60;
     const pricePerHour = 60000;
     const basePrice = totalHours * pricePerHour;
-    const extraPeople = people > 10 ? 5000 : 0;
+    const extraPeople = Number(people) > 10 ? 5000 : 0;
     const promo =
-      durationHours >= 3 ? 'Gratis 1 jam' : durationHours >= 2 ? 'Gratis 30 menit' : '-';
+      durHours >= 3 ? 'Gratis 1 jam' : durHours >= 2 ? 'Gratis 30 menit' : '-';
     const totalPrice = basePrice + extraPeople;
 
     onAddBooking({
@@ -41,7 +50,7 @@ export default function SidebarForm({
       room,
       startTime: start,
       endTime: end,
-      people,
+      people: Number(people),
       totalPrice,
       promo,
       expired: false,
@@ -49,9 +58,18 @@ export default function SidebarForm({
     });
 
     setRoom('');
-    setDurationHours(1);
-    setDurationMinutes(0);
-    setPeople(0);
+    setDurationHours('');
+    setDurationMinutes('');
+    setPeople('');
+  };
+
+  // Fungsi input sanitizer
+  const handleNumberInput = (value, setter, allowZero = false) => {
+    if (value === '') return setter('');
+    const num = Number(value);
+    if (isNaN(num) || num < 0) return;
+    if (!allowZero && num === 0) return setter('');
+    setter(num);
   };
 
   return (
@@ -108,15 +126,19 @@ export default function SidebarForm({
             <input
               type="number"
               value={durationHours}
-              onChange={(e) => setDurationHours(Number(e.target.value))}
+              onChange={(e) => handleNumberInput(e.target.value, setDurationHours)}
               className="w-full p-2 bg-gray-700 text-white rounded"
+              placeholder="Jam"
+              min="1"
             />
             <span className="text-gray-400 self-center">Jam</span>
             <input
               type="number"
               value={durationMinutes}
-              onChange={(e) => setDurationMinutes(Number(e.target.value))}
+              onChange={(e) => handleNumberInput(e.target.value, setDurationMinutes, true)}
               className="w-full p-2 bg-gray-700 text-white rounded"
+              placeholder="Menit"
+              min="0"
             />
             <span className="text-gray-400 self-center">Menit</span>
           </div>
@@ -128,9 +150,10 @@ export default function SidebarForm({
         <input
           type="number"
           value={people}
-          onChange={(e) => setPeople(Number(e.target.value))}
+          onChange={(e) => handleNumberInput(e.target.value, setPeople)}
           className="w-full mt-1 p-2 bg-gray-700 text-white rounded"
           placeholder="Masukkan jumlah tamu"
+          min="1"
         />
       </div>
 
@@ -141,7 +164,7 @@ export default function SidebarForm({
         + Tambah Pemesanan
       </button>
 
-      {currentUser === "Baya Ganteng" && (
+      {currentUser === 'Baya Ganteng' && (
         <button
           onClick={onShowHistory}
           className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 rounded"
