@@ -2,21 +2,26 @@ import React, { useEffect, useState } from 'react';
 import { Clock, Users, Tag, XCircle } from 'lucide-react';
 
 export default function BookingCard({ booking, now, onExpire, onCancel }) {
+  const safeCancel = typeof onCancel === 'function' ? onCancel : () => {};
+
   if (!booking || !booking.startTime || !booking.endTime) {
-    if (typeof onCancel === 'function' && booking?.id) onCancel(booking.id);
+    if (booking?.id) safeCancel(booking.id);
     return null;
   }
 
   const startTime = new Date(booking.startTime);
   const endTime = new Date(booking.endTime);
   if (isNaN(startTime) || isNaN(endTime)) {
-    if (typeof onCancel === 'function' && booking?.id) onCancel(booking.id);
+    if (booking?.id) safeCancel(booking.id);
     return null;
   }
 
   const [remaining, setRemaining] = useState(Math.max(0, endTime - now));
+
   useEffect(() => {
-    const timer = setInterval(() => setRemaining(Math.max(0, endTime - new Date())), 1000);
+    const timer = setInterval(() => {
+      setRemaining(Math.max(0, endTime - new Date()));
+    }, 1000);
     return () => clearInterval(timer);
   }, [endTime]);
 
@@ -32,12 +37,10 @@ export default function BookingCard({ booking, now, onExpire, onCancel }) {
 
   const formatTime = (ms) => {
     const totalSeconds = Math.floor(ms / 1000);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(
-      seconds
-    ).padStart(2, '0')}`;
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = totalSeconds % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   };
 
   return (
@@ -49,7 +52,7 @@ export default function BookingCard({ booking, now, onExpire, onCancel }) {
       }`}
     >
       <div className="flex justify-between items-center mb-3">
-        <h3 className="text-xl font-bold text-white tracking-wide">{booking.room}</h3>
+        <h3 className="text-xl font-bold text-white tracking-wide">{booking.room || 'Unknown Room'}</h3>
         {promoLabel && (
           <div className="text-xs px-2 py-1 bg-gradient-to-r from-amber-400 to-yellow-600 rounded-full font-semibold text-gray-900 shadow-sm">
             {promoLabel}
@@ -67,11 +70,11 @@ export default function BookingCard({ booking, now, onExpire, onCancel }) {
         </p>
         <p className="flex items-center gap-2">
           <Users size={16} className="text-green-400" />
-          <span>{booking.people} orang</span>
+          <span>{booking.people || 0} orang</span>
         </p>
         <p className="flex items-center gap-2">
           <Tag size={16} className="text-yellow-400" />
-          <span>Kasir: {booking.handledBy}</span>
+          <span>Kasir: {booking.handledBy || 'Tidak Diketahui'}</span>
         </p>
       </div>
 
@@ -85,9 +88,7 @@ export default function BookingCard({ booking, now, onExpire, onCancel }) {
         <div className="w-full h-2 bg-gray-700 rounded-full overflow-hidden">
           <div
             className={`h-full transition-all duration-500 ${
-              isExpired
-                ? 'bg-red-500'
-                : 'bg-gradient-to-r from-green-500 to-blue-500'
+              isExpired ? 'bg-red-500' : 'bg-gradient-to-r from-green-500 to-blue-500'
             }`}
             style={{ width: `${progress}%` }}
           ></div>
@@ -98,13 +99,11 @@ export default function BookingCard({ booking, now, onExpire, onCancel }) {
         <div>
           <p className="text-sm text-gray-400">Subtotal:</p>
           <p className="text-lg font-semibold text-emerald-400">
-            Rp {booking.totalPrice?.toLocaleString('id-ID')}
+            Rp {booking.totalPrice?.toLocaleString('id-ID') || 0}
           </p>
         </div>
         <button
-          onClick={() => {
-            if (typeof onCancel === 'function' && booking.id) onCancel(booking.id);
-          }}
+          onClick={() => booking?.id && safeCancel(booking.id)}
           className="flex items-center gap-1 px-3 py-2 bg-red-600 hover:bg-red-700 text-sm font-semibold rounded-lg transition-colors"
         >
           <XCircle size={16} />
@@ -123,3 +122,8 @@ export default function BookingCard({ booking, now, onExpire, onCancel }) {
     </div>
   );
 }
+
+BookingCard.defaultProps = {
+  onCancel: () => {},
+  onExpire: () => {},
+};
