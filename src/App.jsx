@@ -49,7 +49,7 @@ export default function App() {
         const data = snapshot.val();
         if (!data) return setBookings([]);
         const parsed = Object.values(data)
-          .filter(Boolean)
+          .filter((b) => b && b.startTime && b.endTime)
           .map((b) => ({
             ...b,
             startTime: new Date(b.startTime),
@@ -74,9 +74,11 @@ export default function App() {
   }, [role]);
 
   const handleLogin = (user) => {
+    if (!user || typeof user !== "string") return;
     localStorage.setItem("currentUser", user);
+    const detectedRole = USER_ROLES[user] || null;
     setCurrentUser(user);
-    setRole(USER_ROLES[user] || null);
+    setRole(detectedRole);
   };
 
   const startAlarm = useCallback(() => {
