@@ -1,55 +1,55 @@
-import React, { useEffect } from 'react';
-import { AlertTriangle } from 'lucide-react';
-import { MODAL_TIMEOUT } from '../data/constants';
+import React from "react";
+import { motion, AnimatePresence } from "framer-motion";
 
 export default function ExpiredModal({ booking, onComplete, onExtend }) {
-  useEffect(() => {
-    if (!booking?.id) return;
-    const timer = setTimeout(() => onComplete(booking.id), MODAL_TIMEOUT);
-    return () => clearTimeout(timer);
-  }, [booking, onComplete]);
-
-  if (!booking || !booking.room) return null;
-
-  const roomName = booking.room || '-';
-  const startTime =
-    booking.startTime instanceof Date
-      ? booking.startTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      : '-';
-  const endTime =
-    booking.endTime instanceof Date
-      ? booking.endTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      : '-';
-  const total = booking.totalPrice ? `Rp${booking.totalPrice.toLocaleString('id-ID')}` : '-';
+  if (!booking) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-800 p-6 rounded-lg shadow-2xl max-w-sm w-full border border-red-500">
-        <div className="flex flex-col items-center text-center">
-          <AlertTriangle size={48} className="text-red-500 mb-4 animate-pulse" />
-          <h2 className="text-2xl font-bold text-white mb-2">Waktu Habis!</h2>
-          <p className="text-lg text-gray-300 mb-3">
-            Pemesanan untuk <span className="font-bold text-white">{roomName}</span> telah selesai.
+    <AnimatePresence>
+      <motion.div
+        key="expired-modal"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.3 }}
+        className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm"
+      >
+        <motion.div
+          initial={{ scale: 0.8, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          exit={{ scale: 0.8, opacity: 0 }}
+          transition={{ type: "spring", stiffness: 200, damping: 20 }}
+          className="bg-gray-900 text-white rounded-2xl shadow-2xl border border-gray-700 w-[90%] max-w-md p-6 pointer-events-auto"
+        >
+          <h2 className="text-xl font-bold text-red-400 mb-2 text-center">
+            ⏰ Waktu Habis
+          </h2>
+          <p className="text-gray-300 text-sm text-center mb-6">
+            Ruangan <span className="font-semibold text-white">{booking.room}</span> telah
+            mencapai batas waktu. Pilih tindakan berikut:
           </p>
-          <p className="text-sm text-gray-400 mb-6">
-            {startTime} → {endTime} <br /> Total: <span className="text-green-400 font-semibold">{total}</span>
-          </p>
-          <div className="w-full space-y-3">
+
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <button
-              onClick={() => booking?.id && onExtend(booking)}
-              className="w-full px-4 py-3 bg-blue-600 text-white font-bold rounded-md hover:bg-blue-700 transition-colors"
+              onClick={() => onExtend(booking)}
+              className="flex-1 px-4 py-3 bg-green-600 hover:bg-green-700 rounded-lg font-semibold text-sm transition-all duration-300 shadow-lg hover:shadow-green-600/30"
             >
               Tambah Waktu
             </button>
+
             <button
-              onClick={() => booking?.id && onComplete(booking.id)}
-              className="w-full px-4 py-3 bg-gray-600 text-gray-200 font-medium rounded-md hover:bg-gray-500 transition-colors"
+              onClick={() => onComplete(booking.id)}
+              className="flex-1 px-4 py-3 bg-red-600 hover:bg-red-700 rounded-lg font-semibold text-sm transition-all duration-300 shadow-lg hover:shadow-red-600/30"
             >
-              Selesaikan Sesi (Hapus)
+              Selesaikan Sesi
             </button>
           </div>
-        </div>
-      </div>
-    </div>
+
+          <div className="mt-6 text-xs text-center text-gray-400">
+            Pastikan mencatat laporan setelah sesi diselesaikan.
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
   );
 }
