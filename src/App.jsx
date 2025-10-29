@@ -8,7 +8,8 @@ import ExpiredModal from "./components/ExpiredModal";
 import HistoryReportDashboard from "./components/HistoryReportDashboard";
 import UserLogin from "./components/UserLogin";
 import { db, ref, set, onValue, remove, update, push } from "./firebaseConfig";
-import { onAuthStateChanged } from "firebase/auth";
+import { auth } from "./firebaseConfig"; // ✅ tambahan penting
+import { onAuthStateChanged } from "firebase/auth"; // ✅ tambahan penting
 
 const ROLES = {
   ADMIN: "admin",
@@ -42,19 +43,6 @@ export default function App() {
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
   }, [currentUser]);
-
-  useEffect(() => {
-  if (currentUser === "Baya Ganteng") {
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-      if (firebaseUser) {
-        console.log("✅ Firebase Admin Auth aktif:", firebaseUser.email);
-      } else {
-        console.warn("⚠️ Admin belum login ke Firebase Auth");
-      }
-    });
-    return () => unsubscribe();
-  }
-}, [currentUser]);
 
   useEffect(() => {
     const bookingsRef = ref(db, "bookings");
@@ -129,13 +117,11 @@ export default function App() {
         const synth = new PolySynth().connect(filter);
         const lfo = new LFO("2n", 400, 1600).start();
         lfo.connect(filter.frequency);
-
         const playPattern = () => {
           const t = ToneContext.currentTime + 0.1;
           synth.triggerAttackRelease(["A5", "E6"], "8n", t);
           synth.triggerAttackRelease(["C6", "G5"], "8n", t + 0.4);
         };
-
         Transport.scheduleRepeat(playPattern, "1.2s", "+0.1");
         if (Transport.state !== "started") {
           Transport.start("+0.1");
@@ -244,6 +230,20 @@ export default function App() {
     },
     [stopAlarm]
   );
+
+  // ✅ Tambahan: Check Auth Status untuk Admin
+  useEffect(() => {
+    if (currentUser === "Baya Ganteng") {
+      const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+        if (firebaseUser) {
+          console.log("✅ Firebase Admin Auth aktif:", firebaseUser.email);
+        } else {
+          console.warn("⚠️ Admin belum login ke Firebase Auth");
+        }
+      });
+      return () => unsubscribe();
+    }
+  }, [currentUser]);
 
   if (!currentUser)
     return <UserLogin onLogin={handleLogin} footerName={"sweet cherry pie 🍰"} />;
