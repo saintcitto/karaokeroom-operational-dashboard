@@ -80,13 +80,13 @@ export default function App() {
   }, [bookings, now]);
 
   const handleLogin = async (user) => {
+    localStorage.setItem("currentUser", user);
+    setCurrentUser(user);
+    setRole(USER_ROLES[user] || null);
     try {
       await ToneStart();
       await ToneContext.resume();
     } catch {}
-    localStorage.setItem("currentUser", user);
-    setCurrentUser(user);
-    setRole(USER_ROLES[user] || null);
   };
 
   const startAlarm = useCallback(async () => {
