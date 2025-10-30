@@ -5,11 +5,20 @@ import { motion, useAnimation } from "framer-motion";
 export default function UserLogin({ onLogin }) {
   const controls = useAnimation();
 
+  const users = [
+    { id: 1, name: "Baya Ganteng", role: "Admin" },
+    { id: 2, name: "Ayu", role: "Kasir" },
+    { id: 3, name: "Ridho", role: "Kasir" },
+    { id: 4, name: "Umi", role: "Kasir" },
+    { id: 5, name: "Faisal", role: "Petugas Karaoke" },
+    { id: 6, name: "Zahlul", role: "Petugas Karaoke" },
+  ];
+
   useEffect(() => {
-    const animateLoop = async () => {
+    const loop = async () => {
       while (true) {
         await controls.start({
-          opacity: [0.8, 1, 0.9, 1],
+          opacity: [0.7, 1, 0.9, 1],
           scale: [1, 1.03, 1],
           textShadow: [
             "0 0 0px rgba(244,114,182,0)",
@@ -21,28 +30,19 @@ export default function UserLogin({ onLogin }) {
         });
       }
     };
-    animateLoop();
+    loop();
   }, [controls]);
 
-  const users = [
-    { id: 1, name: "Baya Ganteng", role: "Admin" },
-    { id: 2, name: "Ayu", role: "Kasir" },
-    { id: 3, name: "Ridho", role: "Kasir" },
-    { id: 4, name: "Umi", role: "Kasir" },
-    { id: 5, name: "Faisal", role: "Petugas Karaoke" },
-    { id: 6, name: "Zahlul", role: "Petugas Karaoke" },
-  ];
-
-  const handleLogin = async (user) => {
+  const unlockAudio = async (user) => {
     try {
       await ToneStart();
       await ToneContext.resume();
-      console.log("✅ Audio context unlocked");
+      if (onLogin && typeof onLogin === "function") {
+        onLogin(user);
+      }
     } catch (err) {
-      console.warn("⚠️ Audio start blocked:", err);
-    } finally {
-      // 🔥 Kirim objek lengkap user ke parent (App.jsx)
-      onLogin(user);
+      console.error("⚠️ Tone.js error:", err);
+      if (onLogin) onLogin(user);
     }
   };
 
@@ -53,16 +53,20 @@ export default function UserLogin({ onLogin }) {
       </h1>
 
       <div className="grid grid-cols-2 gap-4 w-80">
-        {users.map((user) => (
-          <button
-            key={user.id}
-            onClick={() => handleLogin(user)}
-            className="px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg hover:bg-pink-600 hover:border-pink-500 text-sm font-medium text-white transition-all duration-200 shadow-lg hover:shadow-pink-500/20 active:scale-95"
-          >
-            {user.name}
-            <div className="text-[11px] text-gray-400">{user.role}</div>
-          </button>
-        ))}
+        {users.length > 0 ? (
+          users.map((user) => (
+            <button
+              key={user.id}
+              onClick={() => unlockAudio(user.name)}
+              className="px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg hover:bg-pink-600 hover:border-pink-500 text-sm font-medium text-white transition-all duration-200 shadow-lg hover:shadow-pink-500/20"
+            >
+              {user.name}
+              <div className="text-[11px] text-gray-400">{user.role}</div>
+            </button>
+          ))
+        ) : (
+          <div className="text-gray-400 text-sm mt-4">No users available</div>
+        )}
       </div>
 
       <motion.footer
@@ -75,46 +79,8 @@ export default function UserLogin({ onLogin }) {
           transition={{ duration: 1.5, ease: "easeOut" }}
           className="text-sm font-light tracking-[0.2em]"
         >
-          {"sweet cherry pie".split("").map((char, i) => (
-            <motion.span
-              key={i}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.06, duration: 0.4 }}
-              className={char === " " ? "inline-block w-1" : "inline-block"}
-            >
-              {char}
-            </motion.span>
-          ))}
-          <motion.span
-            animate={{
-              rotate: [0, 10, -10, 0],
-              y: [0, -3, 0],
-            }}
-            transition={{
-              duration: 6,
-              repeat: Infinity,
-              ease: "easeInOut",
-            }}
-            className="inline-block ml-2 text-pink-400 drop-shadow-[0_0_8px_rgba(244,114,182,0.6)]"
-          >
-            🍰
-          </motion.span>
+          sweet cherry pie 🍰
         </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{
-            opacity: [0.1, 0.25, 0.1],
-            scale: [1, 1.03, 1],
-          }}
-          transition={{
-            duration: 8,
-            repeat: Infinity,
-            ease: "easeInOut",
-          }}
-          className="mt-2 w-36 h-[1px] bg-gradient-to-r from-transparent via-pink-400/40 to-transparent blur-[2px]"
-        />
       </motion.footer>
     </div>
   );
