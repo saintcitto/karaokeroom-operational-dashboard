@@ -2,14 +2,14 @@ import React, { useEffect } from "react";
 import { start as ToneStart, context as ToneContext } from "tone";
 import { motion, useAnimation } from "framer-motion";
 
-function UserLogin({ onLogin }) {
+export default function UserLogin({ onLogin }) {
   const controls = useAnimation();
 
   useEffect(() => {
-    const loop = async () => {
+    const animateLoop = async () => {
       while (true) {
         await controls.start({
-          opacity: [0.7, 1, 0.9, 1],
+          opacity: [0.8, 1, 0.9, 1],
           scale: [1, 1.03, 1],
           textShadow: [
             "0 0 0px rgba(244,114,182,0)",
@@ -21,7 +21,7 @@ function UserLogin({ onLogin }) {
         });
       }
     };
-    loop();
+    animateLoop();
   }, [controls]);
 
   const users = [
@@ -33,12 +33,17 @@ function UserLogin({ onLogin }) {
     { id: 6, name: "Zahlul", role: "Petugas Karaoke" },
   ];
 
-  const unlockAudio = async (user) => {
+  const handleLogin = async (user) => {
     try {
       await ToneStart();
       await ToneContext.resume();
-    } catch {}
-    onLogin(user);
+      console.log("✅ Audio context unlocked");
+    } catch (err) {
+      console.warn("⚠️ Audio start blocked:", err);
+    } finally {
+      // 🔥 Kirim objek lengkap user ke parent (App.jsx)
+      onLogin(user);
+    }
   };
 
   return (
@@ -51,8 +56,8 @@ function UserLogin({ onLogin }) {
         {users.map((user) => (
           <button
             key={user.id}
-            onClick={() => unlockAudio(user.name)}
-            className="px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg hover:bg-pink-600 hover:border-pink-500 text-sm font-medium text-white transition-all duration-200 shadow-lg hover:shadow-pink-500/20"
+            onClick={() => handleLogin(user)}
+            className="px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg hover:bg-pink-600 hover:border-pink-500 text-sm font-medium text-white transition-all duration-200 shadow-lg hover:shadow-pink-500/20 active:scale-95"
           >
             {user.name}
             <div className="text-[11px] text-gray-400">{user.role}</div>
@@ -114,5 +119,3 @@ function UserLogin({ onLogin }) {
     </div>
   );
 }
-
-export default UserLogin;
