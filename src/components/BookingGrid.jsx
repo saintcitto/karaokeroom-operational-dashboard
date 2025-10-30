@@ -1,61 +1,56 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { ref, onValue } from "firebase/database";
 import { db } from "../firebaseConfig";
-import SidebarForm from "./SidebarForm";
 import BookingCard from "./BookingCard";
 import BookingGridHeader from "./BookingGridHeader";
 
-export default function BookingGrid({ kasir }) {
+export default function BookingGrid() {
   const [bookings, setBookings] = useState([]);
   const [filter, setFilter] = useState("active");
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const q = ref(db, "bookings");
-    const unsub = onValue(q, (snap) => {
-      const data = snap.val();
-      if (data) {
-        const list = Object.entries(data).map(([id, val]) => ({ id, ...val }));
-        setBookings(list);
-      } else setBookings([]);
-      setLoading(false);
+    const r = ref(db, "bookings");
+    const unsub = onValue(r, (snap) => {
+      const data = snap.val() || {};
+      const arr = Object.entries(data)
+        .map(([id, val]) => ({ id, ...val }))
+        .filter(Boolean)
+        .sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
+      setBookings(arr);
     });
-    return () => unsub();
+    return () => r.off && r.off("value");
   }, []);
 
-  const now = new Date();
-  const filtered =
-    filter === "active"
-      ? bookings.filter((b) => new Date(b.endTime) > now)
-      : filter === "ending"
-      ? bookings.filter((b) => {
-          const diff = (new Date(b.endTime) - now) / 60000;
-          return diff <= 15 && diff > 0;
-        })
-      : bookings.filter((b) => new Date(b.endTime) <= now);
+  const now = Date.now();
+  const filtered = bookings.filter((b) => {
+    if (!b || !b.startTime || !b.endTime) return false;
+    const s = new Date(b.startTime).getTime();
+    const e = new Date(b.endTime).getTime();
+    if (filter === "active") return b.status === "active" && e > now;
+    if (filter === "ending") return b.status === "active" && e - now <= 15 * 60 * 1000 && e > now;
+    if (filter === "expired") return e <= now || b.status === "expired";
+    return true;
+  });
 
   return (
-    <div className="flex min-h-screen bg-[#0C0E13] text-white overflow-hidden">
-      <aside className="w-full md:w-[340px] xl:w-[380px] flex-shrink-0 border-r border-gray-800/70 p-6 bg-[#0E1015]">
-        <SidebarForm kasir={kasir} activeBookings={bookings.filter((b) => new Date(b.endTime) > now)} />
-      </aside>
+    <section className="flex-1 p-6">
+      <div className="mb-6">
+        <h1 className="text-2xl font-semibold flex items-center gap-3">
+          <span>🎤</span> Pemesanan Aktif
+        </h1>
+      </div>
 
-      <main className="flex-1 p-8 overflow-y-auto">
-        <h2 className="text-2xl font-semibold mb-4 tracking-tight">Pemesanan Aktif</h2>
-        <BookingGridHeader activeFilter={filter} onChange={setFilter} />
+      <BookingGridHeader activeFilter={filter} onChange={setFilter} />
 
-        {loading ? (
-          <p className="text-gray-500 text-center mt-20">Memuat data...</p>
-        ) : filtered.length === 0 ? (
-          <p className="text-gray-500 text-center mt-20">Belum ada pemesanan aktif.</p>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 mt-6 pb-10">
-            {filtered.map((b) => (
-              <BookingCard key={b.id} booking={b} />
-            ))}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {filtered.length === 0 ? (
+          <div className="col-span-full text-center text-gray-400 py-16 rounded-lg bg-transparent">
+            Belum ada pemesanan aktif.
           </div>
+        ) : (
+          filtered.map((b) => <BookingCard key={b.id} booking={b} />)
         )}
-      </main>
-    </div>
+      </div>
+    </section>
   );
 }
