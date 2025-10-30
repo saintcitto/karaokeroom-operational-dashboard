@@ -38,7 +38,7 @@ function UserLogin({ onLogin }) {
       await ToneStart();
       await ToneContext.resume();
     } catch {}
-    onLogin(user.name);
+    onLogin(user);
   };
 
   return (
@@ -51,7 +51,7 @@ function UserLogin({ onLogin }) {
         {users.map((user) => (
           <button
             key={user.id}
-            onClick={() => unlockAudio(user)}
+            onClick={() => unlockAudio(user.name)}
             className="px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg hover:bg-pink-600 hover:border-pink-500 text-sm font-medium text-white transition-all duration-200 shadow-lg hover:shadow-pink-500/20"
           >
             {user.name}
@@ -60,7 +60,6 @@ function UserLogin({ onLogin }) {
         ))}
       </div>
 
-      {/* ✨ Footer animasi */}
       <motion.footer
         animate={controls}
         className="absolute bottom-10 w-full flex flex-col items-center justify-center text-gray-400 select-none"
@@ -97,6 +96,7 @@ function UserLogin({ onLogin }) {
             🍰
           </motion.span>
         </motion.div>
+
         <motion.div
           initial={{ opacity: 0 }}
           animate={{
