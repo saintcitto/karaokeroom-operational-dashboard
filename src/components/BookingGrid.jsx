@@ -10,9 +10,17 @@ export default function BookingGrid() {
 
   useEffect(() => {
     const dataRef = ref(db, "bookings");
+
     const handleValue = (snap) => {
       const val = snap.val() || {};
-      const list = Object.entries(val).map(([id, v]) => ({ id, ...v }));
+      const list = Object.entries(val)
+        .map(([id, v]) => ({ id, ...v }))
+        .filter(Boolean)
+        .sort(
+          (a, b) =>
+            new Date(a.createdAt || 0).getTime() -
+            new Date(b.createdAt || 0).getTime()
+        );
       setBookings(list);
     };
 
@@ -21,14 +29,23 @@ export default function BookingGrid() {
   }, []);
 
   const now = Date.now();
+
   const filtered = bookings.filter((b) => {
     if (!b.startTime || !b.endTime) return false;
-    const s = new Date(b.startTime).getTime();
-    const e = new Date(b.endTime).getTime();
-    if (filter === "active") return b.status === "active" && e > now;
-    if (filter === "ending") return b.status === "active" && e - now <= 900000 && e > now;
-    if (filter === "expired") return e <= now || b.status === "expired";
-    return true;
+    const start = new Date(b.startTime).getTime();
+    const end = new Date(b.endTime).getTime();
+
+    // Filter rules
+    switch (filter) {
+      case "active":
+        return b.status === "active" && end > now;
+      case "ending":
+        return b.status === "active" && end > now && end - now <= 15 * 60 * 1000;
+      case "expired":
+        return b.status === "expired" || end <= now;
+      default:
+        return false;
+    }
   });
 
   return (
@@ -42,10 +59,10 @@ export default function BookingGrid() {
       <BookingGridHeader activeFilter={filter} onChange={setFilter} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {filtered.length ? (
+        {filtered.length > 0 ? (
           filtered.map((b) => <BookingCard key={b.id} booking={b} />)
         ) : (
-          <div className="col-span-full text-center text-gray-400 py-16">
+          <div className="col-span-full text-center text-gray-400 py-16 rounded-lg bg-transparent">
             Belum ada pemesanan aktif.
           </div>
         )}
