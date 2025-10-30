@@ -323,17 +323,15 @@ export default function App() {
           </div>
         </main>
 
-        {expiredBooking && (
-          <ExpiredModal
-            key={expiredBooking.id}
-            booking={expiredBooking}
-            onComplete={(id) => handleCompleteSession(id)}
-            onExtend={(b) => handleExtendSession(b)}
-            onClose={() => {
-              stopAlarm();
-              setExpiredBooking(null);
-            }}
-          />
+        {expiredBookings.map((b) => (
+      
+      <ExpiredModal
+        key={b.id}
+        booking={b}
+        onComplete={(id) => handleCompleteSession(id)}
+        onExtend={(bk) => handleExtendSession(bk)}
+        />
+    ))}
         )}
       </div>
     </KTVErrorBoundary>
