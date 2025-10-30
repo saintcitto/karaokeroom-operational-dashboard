@@ -1,83 +1,97 @@
-import { 
-  WARNING_TIME_MINUTES 
-} from '../data/constants';
+import {
+  TARIF_HAPPY_HOUR,
+  TARIF_PRIME_TIME,
+  WARNING_TIME_MINUTES,
+  MAX_PEOPLE_PER_ROOM,
+  OVER_CAPACITY_CHARGE,
+  PROMOTIONS,
+  RATE_UNIT_MINUTES,
+} from "../data/constants";
 
-export const TARIF_PAGI = 45000;
-export const TARIF_MALAM = 60000;
-export const EXTRA_ROOM_CHARGE = 5000;
+// ==============================
+// FORMATTERS
+// ==============================
 
-export const formatCurrency = (amount) => {
-  return new Intl.NumberFormat('id-ID', {
-    style: 'currency',
-    currency: 'IDR',
-    minimumFractionDigits: 0
+export const formatCurrency = (amount = 0) =>
+  new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    minimumFractionDigits: 0,
   }).format(amount);
-};
 
 export const formatTime = (date) => {
-  if (!date || typeof date.toLocaleTimeString !== 'function') {
-    console.error("formatTime menerima nilai non-Date:", date);
+  if (!(date instanceof Date)) {
+    console.warn("⚠️ formatTime menerima non-Date:", date);
     return "Invalid Time";
   }
-  return date.toLocaleTimeString('id-ID', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false
+  return date.toLocaleTimeString("id-ID", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
   });
 };
 
 export const formatTimeForInput = (date) => {
-  const hours = String(date.getHours()).padStart(2, '0');
-  const minutes = String(date.getMinutes()).padStart(2, '0');
-  return `${hours}:${minutes}`;
+  if (!(date instanceof Date)) return "00:00";
+  const h = String(date.getHours()).padStart(2, "0");
+  const m = String(date.getMinutes()).padStart(2, "0");
+  return `${h}:${m}`;
 };
 
-export const formatDuration = (totalMinutes) => {
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  return `${hours}j ${minutes}m`;
+export const formatDuration = (minutes = 0) => {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${h}j ${m}m`;
 };
 
-export const calculateTarif = (startTime) => {
-  const hour = startTime.getHours();
-  const minute = startTime.getMinutes();
+// ==============================
+// TARIFF LOGIC
+// ==============================
 
-  const pagiMulai = 10 * 60;       // 10:00
-  const soreMulai = 16 * 60 + 45;  // 16:45
-  const totalMenit = hour * 60 + minute;
+export const getTariffByTime = (startTime) => {
+  if (!(startTime instanceof Date)) return TARIF_HAPPY_HOUR;
 
-  if (totalMenit >= pagiMulai && totalMenit <= soreMulai - 1) {
-    return TARIF_PAGI;
-  } else {
-    return TARIF_MALAM;
-  }
+  const totalMinutes = startTime.getHours() * 60 + startTime.getMinutes();
+  const pagiMulai = 10 * 60; // 10:00
+  const soreMulai = 16 * 60 + 45; // 16:45
+
+  return totalMinutes >= pagiMulai && totalMinutes < soreMulai
+    ? TARIF_HAPPY_HOUR
+    : TARIF_PRIME_TIME;
 };
 
-export const calculateTotalPriceWithPromo = (startTime, durationMinutes, people) => {
-  const tarif = calculateTarif(startTime);
-  const durasiJam = durationMinutes / 60;
+// ==============================
+// PROMO + TARIF CALCULATION
+// ==============================
 
+export const calculateTotalPriceWithPromo = (
+  startTime,
+  durationMinutes = 0,
+  people = 1
+) => {
+  const tarif = getTariffByTime(startTime);
+  const durationHours = durationMinutes / RATE_UNIT_MINUTES;
+
+  // Cek promo applicable
   let freeMinutes = 0;
-  let bayarJam = durasiJam;
-  let promoNote = '-';
-
-  if (durationMinutes === 120) {
-    freeMinutes = 30;
-    bayarJam = 2;
-    promoNote = 'Gratis 30 menit';
-  } else if (durationMinutes === 180) {
-    freeMinutes = 60;
-    bayarJam = 3;
-    promoNote = 'Gratis 1 jam';
+  let bayarJam = durationHours;
+  let promoNote = "-";
+  if (PROMOTIONS[durationMinutes]) {
+    freeMinutes = PROMOTIONS[durationMinutes].bonus;
+    promoNote = PROMOTIONS[durationMinutes].note;
   }
 
   const hargaWaktu = tarif * bayarJam;
-  const biayaTambahan = people > 10 ? 5000 : 0;
+
+  // Tambahan biaya bila over capacity
+  const overCount = Math.max(0, people - MAX_PEOPLE_PER_ROOM);
+  const biayaTambahan = overCount * OVER_CAPACITY_CHARGE;
+
   const total = hargaWaktu + biayaTambahan;
 
   return {
     tarif,
-    durasiJam,
+    durationHours,
     freeMinutes,
     bayarJam,
     hargaWaktu,
@@ -87,11 +101,26 @@ export const calculateTotalPriceWithPromo = (startTime, durationMinutes, people)
   };
 };
 
-export const getBookingStatus = (endTime, now) => {
-  const timeLeftMs = endTime.getTime() - now.getTime();
-  const timeLeftMin = timeLeftMs / 60000;
+// ==============================
+// STATUS CHECKER
+// ==============================
 
-  if (timeLeftMin <= 0) return 'expired';
-  if (timeLeftMin <= WARNING_TIME_MINUTES) return 'warning';
-  return 'normal';
+export const getBookingStatus = (endTime, now = new Date()) => {
+  if (!(endTime instanceof Date)) return "unknown";
+  const diffMin = (endTime - now) / 60000;
+  if (diffMin <= 0) return "expired";
+  if (diffMin <= WARNING_TIME_MINUTES) return "warning";
+  return "normal";
+};
+
+// ==============================
+// GENERAL UTILITIES
+// ==============================
+
+export const parseDateSafe = (val) => {
+  try {
+    return val instanceof Date ? val : new Date(val);
+  } catch {
+    return new Date();
+  }
 };
