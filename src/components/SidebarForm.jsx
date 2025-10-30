@@ -1,81 +1,98 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { ref, push, serverTimestamp } from "firebase/database";
 import { db } from "../firebaseConfig";
 
-export default function SidebarForm({ kasir, activeBookings = [] }) {
+export default function SidebarForm({ kasir = "Tidak Diketahui", activeBookings = [] }) {
   const [room, setRoom] = useState("");
-  const [jam, setJam] = useState("");
-  const [menit, setMenit] = useState("");
-  const [jumlahOrang, setJumlahOrang] = useState("");
-  const [isSaving, setIsSaving] = useState(false);
-  const [timeNow, setTimeNow] = useState(new Date());
+  const [hourInput, setHourInput] = useState("");
+  const [minuteInput, setMinuteInput] = useState("");
+  const [people, setPeople] = useState("");
+  const [now, setNow] = useState(new Date());
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    const timer = setInterval(() => setTimeNow(new Date()), 1000);
-    return () => clearInterval(timer);
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(t);
   }, []);
 
-  const handleNow = () => setTimeNow(new Date());
+  const allRooms = [
+    "KTV 1",
+    "KTV 2",
+    "KTV 3",
+    "KTV 4",
+    "KTV 5",
+    "KTV 8",
+    "KTV 9",
+    "KTV 10",
+    "KTV 11",
+    "KTV 12",
+  ];
 
-  const handleAddBooking = async () => {
-    if (!room || (!jam && !menit) || !jumlahOrang) return;
-    setIsSaving(true);
+  const usedRooms = Array.isArray(activeBookings) ? activeBookings.map((b) => b.room) : [];
 
-    const start = timeNow;
-    const totalMinutes = parseInt(jam || 0) * 60 + parseInt(menit || 0);
-    const hour = start.getHours() + start.getMinutes() / 60;
+  const formatTime = (d) => d.toTimeString().slice(0, 5);
 
-    let duration = totalMinutes;
-    let bonusMinutes = 0;
-    if (parseInt(jam) === 2 && parseInt(menit) === 0) bonusMinutes = 30;
-    else if (parseInt(jam) === 3 && parseInt(menit) === 0) bonusMinutes = 60;
-
-    const end = new Date(start.getTime() + (duration + bonusMinutes) * 60000);
-    const isDay = hour >= 10 && hour < 16.75;
+  const calculatePrice = (startDate, durationMinutes) => {
+    const hourDecimal = startDate.getHours() + startDate.getMinutes() / 60;
+    const isDay = hourDecimal >= 10 && hourDecimal < 16.75;
     const ratePer30 = isDay ? 22500 : 30000;
     const ratePerHour = ratePer30 * 2;
-    const fullHours = Math.floor(duration / 60);
-    const extraMinutes = duration % 60;
-    const extraCharge = extraMinutes > 0 ? (extraMinutes / 30) * ratePer30 : 0;
-    const totalPrice = fullHours * ratePerHour + extraCharge;
+    const fullHours = Math.floor(durationMinutes / 60);
+    const extraMinutes = durationMinutes % 60;
+    const extraCharge = extraMinutes > 0 ? Math.ceil(extraMinutes / 30) * ratePer30 : 0;
+    return fullHours * ratePerHour + extraCharge;
+  };
 
-    const newBooking = {
+  const handleNowClick = () => setNow(new Date());
+
+  const handleSubmit = async () => {
+    if (!room || (!hourInput && !minuteInput) || !people) return;
+    if (usedRooms.includes(room)) return;
+
+    setSaving(true);
+
+    const duration = Number(hourInput || 0) * 60 + Number(minuteInput || 0);
+    let bonus = 0;
+    if (Number(hourInput) === 2 && Number(minuteInput) === 0) bonus = 30;
+    if (Number(hourInput) === 3 && Number(minuteInput) === 0) bonus = 60;
+
+    const totalDuration = duration + bonus;
+    const end = new Date(now.getTime() + totalDuration * 60000);
+    const price = calculatePrice(now, duration);
+
+    const payload = {
       room,
-      startTime: start.toISOString(),
+      startTime: now.toISOString(),
       endTime: end.toISOString(),
-      durationMinutes: duration + bonusMinutes,
-      bonusMinutes,
-      people: parseInt(jumlahOrang),
-      cashier: kasir || "Tidak Diketahui",
-      pricePer30Min: ratePer30,
-      totalPrice,
+      durationRequestedMinutes: duration,
+      bonusMinutes: bonus,
+      durationTotalMinutes: totalDuration,
+      people: Number(people),
+      cashier: kasir,
+      totalPrice: Number(price),
+      pricePer30Min: Number(price) ? undefined : undefined,
       status: "active",
       createdAt: serverTimestamp(),
     };
 
-    await push(ref(db, "bookings"), newBooking);
-    setRoom(""); setJam(""); setMenit(""); setJumlahOrang("");
-    setIsSaving(false);
+    await push(ref(db, "bookings"), payload);
+    setRoom("");
+    setHourInput("");
+    setMinuteInput("");
+    setPeople("");
+    setSaving(false);
   };
 
-  const allRooms = [
-    "KTV 1", "KTV 2", "KTV 3", "KTV 4", "KTV 5",
-    "KTV 8", "KTV 9", "KTV 10", "KTV 11", "KTV 12"
-  ];
-
-  const usedRooms = Array.isArray(activeBookings)
-    ? activeBookings.map((b) => b.room)
-    : [];
-
   return (
-    <div className="w-full bg-[#0F1117] rounded-3xl shadow-[0_0_25px_rgba(255,255,255,0.05)] text-white p-6 transition-all duration-500 ease-out">
-      <h2 className="text-xl font-semibold mb-4 text-white/90">Buat Pemesanan Baru</h2>
+    <aside className="w-full md:w-80 bg-[#0b0f14] rounded-3xl p-6 shadow-2xl sticky top-6">
+      <div className="text-pink-400 text-sm font-semibold mb-2">Login sebagai: {kasir}</div>
+      <h3 className="text-2xl font-extrabold text-white mb-4">Buat Pemesanan Baru</h3>
 
-      <label className="block text-sm mb-1 text-gray-400">Pilih Ruangan</label>
+      <label className="block text-sm text-gray-300 mb-2">Pilih Ruangan</label>
       <select
+        className="w-full bg-[#0f1720] text-white p-3 rounded-xl border border-gray-800 mb-4"
         value={room}
         onChange={(e) => setRoom(e.target.value)}
-        className="w-full mb-3 p-3 bg-gray-900 rounded-xl border border-gray-700 focus:ring-2 focus:ring-pink-500 transition-all"
       >
         <option value="">-- Pilih Ruangan --</option>
         {allRooms.map((r) => (
@@ -85,55 +102,59 @@ export default function SidebarForm({ kasir, activeBookings = [] }) {
         ))}
       </select>
 
-      <label className="block text-sm mb-1 text-gray-400">Jam Masuk</label>
-      <div className="flex gap-2 mb-3">
+      <label className="block text-sm text-gray-300 mb-2">Jam Masuk</label>
+      <div className="flex gap-3 mb-4">
         <input
+          className="flex-1 p-3 bg-[#0f1720] rounded-xl border border-gray-800 text-gray-300"
+          value={formatTime(now)}
           readOnly
-          value={timeNow.toTimeString().slice(0, 5)}
-          className="flex-1 p-3 bg-gray-900 border border-gray-700 rounded-xl text-gray-300"
         />
-        <button
-          onClick={handleNow}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-xl text-sm font-semibold"
-        >
+        <button onClick={handleNowClick} className="px-4 py-2 rounded-xl bg-blue-600 text-white font-semibold">
           Sekarang
         </button>
       </div>
 
-      <label className="block text-sm mb-1 text-gray-400">Durasi</label>
-      <div className="flex gap-2 mb-3">
+      <label className="block text-sm text-gray-300 mb-2">Durasi</label>
+      <div className="flex gap-3 mb-4">
         <input
           type="number"
           placeholder="Jam"
-          value={jam}
-          onChange={(e) => setJam(e.target.value)}
-          className="w-1/2 p-3 bg-gray-900 border border-gray-700 rounded-xl"
+          className="w-1/2 p-3 bg-[#0f1720] rounded-xl border border-gray-800 text-gray-300"
+          value={hourInput}
+          onChange={(e) => setHourInput(e.target.value.replace(/\D/, ""))}
         />
         <input
           type="number"
           placeholder="Menit"
-          value={menit}
-          onChange={(e) => setMenit(e.target.value)}
-          className="w-1/2 p-3 bg-gray-900 border border-gray-700 rounded-xl"
+          className="w-1/2 p-3 bg-[#0f1720] rounded-xl border border-gray-800 text-gray-300"
+          value={minuteInput}
+          onChange={(e) => setMinuteInput(e.target.value.replace(/\D/, ""))}
         />
       </div>
 
-      <label className="block text-sm mb-1 text-gray-400">Jumlah Orang</label>
+      <label className="block text-sm text-gray-300 mb-2">Jumlah Orang</label>
       <input
         type="number"
         placeholder="Masukkan jumlah tamu"
-        value={jumlahOrang}
-        onChange={(e) => setJumlahOrang(e.target.value)}
-        className="w-full p-3 mb-4 bg-gray-900 border border-gray-700 rounded-xl"
+        className="w-full p-3 bg-[#0f1720] rounded-xl border border-gray-800 text-gray-300 mb-4"
+        value={people}
+        onChange={(e) => setPeople(e.target.value.replace(/\D/, ""))}
       />
 
       <button
-        onClick={handleAddBooking}
-        disabled={isSaving}
-        className={`w-full py-3 rounded-2xl font-semibold transition-all ${isSaving ? "bg-gray-700" : "bg-green-600 hover:bg-green-700"}`}
+        onClick={handleSubmit}
+        disabled={saving || !room || (!hourInput && !minuteInput) || !people || usedRooms.includes(room)}
+        className={`w-full py-3 rounded-2xl font-bold transition ${
+          saving || usedRooms.includes(room) ? "bg-gray-700 text-gray-300" : "bg-green-600 hover:bg-green-700 text-white"
+        }`}
       >
-        {isSaving ? "Menyimpan..." : "+ Tambah Pemesanan"}
+        {saving ? "Menyimpan..." : "+ Tambah Pemesanan"}
       </button>
-    </div>
+
+      <div className="mt-6 text-xs text-gray-400 leading-relaxed">
+        <div className="mb-2">Siang (10.00–16.44): Rp22.500 / 30 menit</div>
+        <div>Malam (16.45–00.00): Rp30.000 / 30 menit</div>
+      </div>
+    </aside>
   );
 }
