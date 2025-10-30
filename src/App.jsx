@@ -76,10 +76,7 @@ export default function App() {
     const expiredNow = bookings.filter(
       (b) => !b.expired && b.endTime <= now && !expireLockRef.current[b.id]
     );
-    expiredNow.forEach((booking) => {
-      expireLockRef.current[booking.id] = true;
-      handleExpire(booking);
-    });
+    expiredNow.forEach((booking) => handleExpire(booking));
   }, [bookings, now]);
 
   const handleLogin = async (user) => {
@@ -152,30 +149,35 @@ export default function App() {
   };
 
   const handleExpire = useCallback(
-  async (booking) => {
-    if (!booking?.id) return;
-    try {
-      if (booking.expired) return;
+    (booking) => {
+      if (!booking?.id) return;
       if (expireLockRef.current[booking.id]) return;
-
       expireLockRef.current[booking.id] = true;
+      update(ref(db, "bookings/" + booking.id), { expired: true })
+        .then(() => {
+          setExpiredBookings((prev) => {
+            const exists = prev.find((b) => b.id === booking.id);
+            if (exists) return prev;
+            const updated = [...prev, { ...booking, expired: true }];
+            if (updated.length > 0 && !alarmRef.current) startAlarm();
+            return updated;
+          });
+        })
+        .catch((err) => {
+          console.warn("⚠️ Failed to mark expired:", booking.room, err.message);
+          expireLockRef.current[booking.id] = false;
+        });
+    },
+    [startAlarm]
+  );
 
-      await update(ref(db, "bookings/" + booking.id), { expired: true });
-
-      setExpiredBookings((prev) => {
-        const exists = prev.find((b) => b.id === booking.id);
-        if (exists) return prev;
-        return [...prev, { ...booking, expired: true }];
-      });
-
-      startAlarm();
-    } catch (err) {
-      console.warn("🔥 Failed to mark expired:", booking.room, err.message);
-      expireLockRef.current[booking.id] = false;
+  useEffect(() => {
+    if (expiredBookings.length > 0) {
+      if (!alarmRef.current) startAlarm();
+    } else {
+      stopAlarm();
     }
-  },
-  [startAlarm]
-);
+  }, [expiredBookings, startAlarm, stopAlarm]);
 
   const handleCompleteSession = useCallback(
     async (bookingId) => {
