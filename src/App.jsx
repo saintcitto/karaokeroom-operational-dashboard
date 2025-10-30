@@ -152,21 +152,30 @@ export default function App() {
   };
 
   const handleExpire = useCallback(
-    (booking) => {
-      if (!booking?.id) return;
-      update(ref(db, "bookings/" + booking.id), { expired: true })
-        .then(() => {
-          setExpiredBookings((prev) => {
-            const exists = prev.find((b) => b.id === booking.id);
-            if (exists) return prev;
-            return [...prev, { ...booking, expired: true }];
-          });
-          startAlarm();
-        })
-        .catch((err) => console.error("Failed to mark expired:", err));
-    },
-    [startAlarm]
-  );
+  async (booking) => {
+    if (!booking?.id) return;
+    try {
+      if (booking.expired) return;
+      if (expireLockRef.current[booking.id]) return;
+
+      expireLockRef.current[booking.id] = true;
+
+      await update(ref(db, "bookings/" + booking.id), { expired: true });
+
+      setExpiredBookings((prev) => {
+        const exists = prev.find((b) => b.id === booking.id);
+        if (exists) return prev;
+        return [...prev, { ...booking, expired: true }];
+      });
+
+      startAlarm();
+    } catch (err) {
+      console.warn("🔥 Failed to mark expired:", booking.room, err.message);
+      expireLockRef.current[booking.id] = false;
+    }
+  },
+  [startAlarm]
+);
 
   const handleCompleteSession = useCallback(
     async (bookingId) => {
