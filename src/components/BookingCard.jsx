@@ -1,84 +1,105 @@
 import React, { useEffect, useState } from "react";
-import { ref, remove } from "firebase/database";
+import { ref, update } from "firebase/database";
 import { db } from "../firebaseConfig";
 
+function formatRp(n) {
+  if (typeof n !== "number") return "Rp 0";
+  return "Rp " + n.toLocaleString("id-ID");
+}
+
 export default function BookingCard({ booking }) {
-  const [now, setNow] = useState(new Date());
-  const id = booking?.id;
+  const [remaining, setRemaining] = useState(0);
+  const [progress, setProgress] = useState(0);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    const i = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(i);
-  }, []);
+    if (!booking || !booking.startTime || !booking.endTime) return;
+    const start = new Date(booking.startTime).getTime();
+    const end = new Date(booking.endTime).getTime();
+    const total = Math.max(1, end - start);
+    const tick = () => {
+      const now = Date.now();
+      const rem = Math.max(0, end - now);
+      setRemaining(rem);
+      const done = Math.min(1, (now - start) / total);
+      setProgress(done);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [booking]);
 
-  const start = booking?.startTime ? new Date(booking.startTime) : null;
-  const end = booking?.endTime ? new Date(booking.endTime) : null;
-
-  const remaining =
-    end && now
-      ? Math.max(0, end.getTime() - now.getTime())
-      : 0;
-
-  const hrs = String(Math.floor(remaining / 3600000)).padStart(2, "0");
-  const mins = String(Math.floor((remaining % 3600000) / 60000)).padStart(2, "0");
-  const secs = String(Math.floor((remaining % 60000) / 1000)).padStart(2, "0");
-
-  const progress = end && start ? ((end - now) / (end - start)) * 100 : 0;
-  const totalPrice = booking?.totalPrice || 0;
-  const bonus = booking?.bonusMinutes || 0;
-
-  const cancel = async () => {
-    if (!id) return;
-    await remove(ref(db, `bookings/${id}`));
+  const cancelBooking = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await update(ref(db, `bookings/${booking.id}`), { status: "expired" });
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSaving(false);
+    }
   };
 
+  const toTime = (ms) => {
+    if (ms <= 0) return "00:00:00";
+    const s = Math.floor(ms / 1000);
+    const hh = String(Math.floor(s / 3600)).padStart(2, "0");
+    const mm = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
+    const ss = String(s % 60).padStart(2, "0");
+    return `${hh}:${mm}:${ss}`;
+  };
+
+  const start = booking.startTime ? new Date(booking.startTime) : null;
+  const end = booking.endTime ? new Date(booking.endTime) : null;
+  const hasPromo = booking.bonusMinutes && booking.bonusMinutes > 0;
+  const totalPrice = typeof booking.totalPrice === "number" ? booking.totalPrice : 0;
+
   return (
-    <div className="bg-gradient-to-br from-[#121621] to-[#0c0f16] border border-gray-800 rounded-2xl shadow-lg p-5 hover:scale-[1.02] hover:shadow-2xl transition-all duration-300">
-      <div className="flex items-center justify-between mb-3">
+    <article className="bg-gray-900/40 border border-gray-800 rounded-xl p-6 transition-transform transform hover:-translate-y-1 shadow-lg">
+      <div className="flex items-start justify-between">
         <div>
-          <h3 className="text-lg font-bold text-white">{booking?.room || "—"}</h3>
-          <p className="text-gray-400 text-sm">
-            {start && end ? `${start.toTimeString().slice(0, 5)} - ${end.toTimeString().slice(0, 5)}` : "—"}
-          </p>
+          <h3 className="text-lg font-semibold">{booking.room || "—"}</h3>
+          <div className="text-sm text-gray-400 mt-1">
+            {start && end ? `${start.toTimeString().slice(0,5)} - ${end.toTimeString().slice(0,5)}` : "—"}
+          </div>
         </div>
-        {bonus > 0 && (
-          <span className="text-xs bg-pink-500/20 text-pink-400 px-2 py-1 rounded-full font-medium">+{bonus} menit</span>
-        )}
-      </div>
-
-      <div className="text-sm text-gray-300 space-y-1">
-        <div>👥 {booking?.people || 0} orang</div>
-        <div>💁‍♀️ Kasir: {booking?.cashier || "Tidak Diketahui"}</div>
-        <div>⏱ Durasi: {booking?.durationTotalMinutes || booking?.durationMinutes || 0} menit</div>
-      </div>
-
-      <div className="mt-4 mb-3">
-        <div className="flex justify-between items-center mb-2">
-          <span className="text-gray-400 text-sm">Sisa Waktu</span>
-          <span className="font-mono text-green-400 text-lg">{`${hrs}:${mins}:${secs}`}</span>
-        </div>
-        <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
-          <div
-            style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}
-            className="h-2 bg-gradient-to-r from-green-400 to-blue-400 transition-all duration-500"
-          />
+        <div className="text-right">
+          <div className="text-sm text-gray-400">⏱ {booking.baseDuration || booking.durationMinutes || 0} menit</div>
+          {hasPromo && <div className="mt-1 text-xs text-green-300">Bonus: +{booking.bonusMinutes} menit</div>}
         </div>
       </div>
 
-      <div className="flex items-center justify-between border-t border-gray-800 pt-3">
+      <div className="mt-4 text-sm text-gray-300 space-y-2">
+        <div>👥 {booking.people || 0} orang</div>
+        <div>🧾 Kasir: {booking.cashier || "Tidak Diketahui"}</div>
+      </div>
+
+      <div className="mt-4">
+        <div className="flex items-center justify-between text-sm text-gray-300 mb-2">
+          <div>Sisa Waktu:</div>
+          <div className="font-mono text-green-300">{toTime(remaining)}</div>
+        </div>
+        <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
+          <div style={{ width: `${Math.floor(progress * 100)}%` }} className="h-full bg-gradient-to-r from-green-400 to-blue-500 transition-all"></div>
+        </div>
+      </div>
+
+      <div className="mt-6 flex items-center justify-between">
         <div>
-          <p className="text-xs text-gray-400">Subtotal</p>
-          <p className="text-lg font-semibold text-green-400">
-            Rp {new Intl.NumberFormat("id-ID").format(totalPrice)}
-          </p>
+          <div className="text-xs text-gray-400">Subtotal:</div>
+          <div className="text-lg font-semibold text-green-300">{formatRp(totalPrice)}</div>
         </div>
         <button
-          onClick={cancel}
-          className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-all"
+          onClick={cancelBooking}
+          disabled={saving}
+          className={`px-4 py-2 rounded-md text-white font-medium transition ${
+            saving ? "bg-red-600/60 cursor-not-allowed" : "bg-red-600 hover:bg-red-700"
+          }`}
         >
-          Batalkan
+          {saving ? "Memproses..." : "Batalkan"}
         </button>
       </div>
-    </div>
+    </article>
   );
 }
