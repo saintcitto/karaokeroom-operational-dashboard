@@ -1,129 +1,71 @@
-import React, { useEffect, useState } from 'react';
-import { Clock, Users, Tag, XCircle } from 'lucide-react';
+import React, { useEffect, useState } from "react";
+import { ref, update } from "firebase/database";
+import { db } from "../firebaseConfig";
 
-export default function BookingCard({ booking, now, onExpire, onCancel }) {
-  const safeCancel = typeof onCancel === 'function' ? onCancel : () => {};
-
-  if (!booking || !booking.startTime || !booking.endTime) {
-    if (booking?.id) safeCancel(booking.id);
-    return null;
-  }
-
-  const startTime = new Date(booking.startTime);
-  const endTime = new Date(booking.endTime);
-  if (isNaN(startTime) || isNaN(endTime)) {
-    if (booking?.id) safeCancel(booking.id);
-    return null;
-  }
-
-  const [remaining, setRemaining] = useState(Math.max(0, endTime - now));
+export default function BookingCard({ bookingId, booking }) {
+  const [remainingTime, setRemainingTime] = useState("");
+  const [isEndingSoon, setIsEndingSoon] = useState(false);
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setRemaining(Math.max(0, endTime - new Date()));
+    if (!booking.endTime) return;
+    const interval = setInterval(() => {
+      const now = new Date().getTime();
+      const end = new Date(booking.endTime).getTime();
+      const diff = end - now;
+      if (diff <= 0) {
+        update(ref(db, `bookings/${bookingId}`), { status: "expired" });
+        clearInterval(interval);
+        setRemainingTime("00:00:00");
+        return;
+      }
+      const h = Math.floor(diff / 3600000);
+      const m = Math.floor((diff % 3600000) / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+      setRemainingTime(`${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`);
+      setIsEndingSoon(diff < 10 * 60 * 1000);
     }, 1000);
-    return () => clearInterval(timer);
-  }, [endTime]);
+    return () => clearInterval(interval);
+  }, [booking.endTime, bookingId]);
 
-  const totalDuration = endTime - startTime;
-  const progress = totalDuration > 0 ? 100 - (remaining / totalDuration) * 100 : 0;
-  const isExpired = remaining <= 0;
-  const promoLabel =
-    booking.promo === 'Gratis 1 jam'
-      ? '🎁 +60 Menit Gratis'
-      : booking.promo === 'Gratis 30 menit'
-      ? '🎁 +30 Menit Gratis'
-      : null;
-
-  const formatTime = (ms) => {
-    const totalSeconds = Math.floor(ms / 1000);
-    const h = Math.floor(totalSeconds / 3600);
-    const m = Math.floor((totalSeconds % 3600) / 60);
-    const s = totalSeconds % 60;
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  const formatTime = (iso) => {
+    const d = new Date(iso);
+    return `${d.getHours().toString().padStart(2, "0")}.${d.getMinutes().toString().padStart(2, "0")}`;
   };
 
+  const cancelBooking = async () => update(ref(db, `bookings/${bookingId}`), { status: "cancelled" });
+
+  const promo =
+    booking.bonusMinutes === 30 ? "+30 Menit Promo" :
+    booking.bonusMinutes === 60 ? "+1 Jam Promo" : null;
+
   return (
-    <div
-      className={`relative rounded-2xl p-5 border transition-all duration-300 shadow-lg hover:shadow-xl ${
-        isExpired
-          ? 'border-red-500 bg-gradient-to-br from-red-900/30 to-gray-900'
-          : 'border-gray-700 bg-gradient-to-br from-gray-800 to-gray-900'
-      }`}
-    >
-      <div className="flex justify-between items-center mb-3">
-        <h3 className="text-xl font-bold text-white tracking-wide">{booking.room || 'Unknown Room'}</h3>
-        {promoLabel && (
-          <div className="text-xs px-2 py-1 bg-gradient-to-r from-amber-400 to-yellow-600 rounded-full font-semibold text-gray-900 shadow-sm">
-            {promoLabel}
-          </div>
-        )}
-      </div>
-
-      <div className="space-y-2 text-sm text-gray-300">
-        <p className="flex items-center gap-2">
-          <Clock size={16} className="text-blue-400" />
-          <span>
-            {startTime.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} -{' '}
-            {endTime.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
-          </span>
-        </p>
-        <p className="flex items-center gap-2">
-          <Users size={16} className="text-green-400" />
-          <span>{booking.people || 0} orang</span>
-        </p>
-        <p className="flex items-center gap-2">
-          <Tag size={16} className="text-yellow-400" />
-          <span>Kasir: {booking.handledBy || 'Tidak Diketahui'}</span>
-        </p>
-      </div>
-
-      <div className="mt-4">
-        <div className="flex justify-between items-center text-xs mb-1">
-          <span className="text-gray-400">Sisa Waktu</span>
-          <span className={`font-semibold ${isExpired ? 'text-red-400' : 'text-green-400'}`}>
-            {formatTime(remaining)}
-          </span>
-        </div>
-        <div className="w-full h-2 bg-gray-700 rounded-full overflow-hidden">
-          <div
-            className={`h-full transition-all duration-500 ${
-              isExpired ? 'bg-red-500' : 'bg-gradient-to-r from-green-500 to-blue-500'
-            }`}
-            style={{ width: `${progress}%` }}
-          ></div>
-        </div>
-      </div>
-
-      <div className="flex justify-between items-center mt-5">
+    <div className={`relative p-5 rounded-2xl border transition-all duration-500 shadow-lg ${isEndingSoon ? "border-red-500 animate-pulse bg-gradient-to-br from-gray-800/60 to-red-900/40" : "border-gray-700 bg-gray-800/70 hover:scale-[1.02]"}`}>
+      <div className="flex justify-between">
         <div>
-          <p className="text-sm text-gray-400">Subtotal:</p>
-          <p className="text-lg font-semibold text-emerald-400">
-            Rp {booking.totalPrice?.toLocaleString('id-ID') || 0}
-          </p>
+          <h3 className="text-lg font-bold text-white">{booking.room}</h3>
+          <p className="text-sm text-gray-400 mt-1">⏰ {formatTime(booking.startTime)} - {formatTime(booking.endTime)}</p>
         </div>
-        <button
-          onClick={() => booking?.id && safeCancel(booking.id)}
-          className="flex items-center gap-1 px-3 py-2 bg-red-600 hover:bg-red-700 text-sm font-semibold rounded-lg transition-colors"
-        >
-          <XCircle size={16} />
-          Batalkan
-        </button>
+        {promo && <span className="text-xs bg-pink-600/30 text-pink-300 px-2 py-1 rounded-md font-medium">{promo}</span>}
       </div>
 
-      {isExpired && (
-        <div className="absolute inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center rounded-2xl">
-          <div className="text-center">
-            <p className="text-red-400 font-bold text-lg mb-1">Waktu Habis</p>
-            <p className="text-xs text-gray-300">Segera perpanjang atau tutup sesi</p>
-          </div>
+      <div className="mt-3 text-sm text-gray-300 space-y-1">
+        <p>👥 {booking.people} orang</p>
+        <p>💳 Kasir: {booking.cashier}</p>
+        <p>⏱ {booking.inputDurationMinutes} menit {booking.bonusMinutes > 0 && <span className="text-pink-400">(+{booking.bonusMinutes} promo)</span>}</p>
+      </div>
+
+      <div className="mt-3 border-t border-gray-700 pt-3">
+        <div className="flex justify-between text-sm">
+          <span className="text-gray-400">Sisa Waktu:</span>
+          <span className={`font-mono text-lg ${isEndingSoon ? "text-red-400" : "text-green-400"}`}>{remainingTime}</span>
         </div>
-      )}
+        <div className="flex justify-between mt-2 text-sm">
+          <span className="text-gray-400">Subtotal:</span>
+          <span className="text-green-400 font-semibold text-lg">Rp {booking.subtotal.toLocaleString("id-ID")}</span>
+        </div>
+      </div>
+
+      <button onClick={cancelBooking} className="w-full mt-4 py-2 rounded-lg bg-red-700 hover:bg-red-800 font-semibold text-sm transition-all">❌ Batalkan</button>
     </div>
   );
 }
-
-BookingCard.defaultProps = {
-  onCancel: () => {},
-  onExpire: () => {},
-};
