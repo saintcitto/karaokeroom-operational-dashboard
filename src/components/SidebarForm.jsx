@@ -1,148 +1,74 @@
 import React, { useEffect, useState } from "react";
-import { ref, push, serverTimestamp } from "firebase/database";
+import { ref, remove } from "firebase/database";
 import { db } from "../firebaseConfig";
 
-export default function SidebarForm({ kasir = "Tidak Diketahui", activeBookings = [] }) {
-  const [room, setRoom] = useState("");
-  const [hours, setHours] = useState("");
-  const [minutes, setMinutes] = useState("");
-  const [people, setPeople] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [timeNow, setTimeNow] = useState(new Date());
+export default function BookingCard({ booking }) {
+  const [now, setNow] = useState(new Date());
+  const id = booking?.id;
 
   useEffect(() => {
-    const interval = setInterval(() => setTimeNow(new Date()), 1000);
-    return () => clearInterval(interval);
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
   }, []);
 
-  const allRooms = ["KTV 1", "KTV 2", "KTV 3", "KTV 4", "KTV 5", "KTV 8", "KTV 9", "KTV 10", "KTV 11", "KTV 12"];
-  const usedRooms = Array.isArray(activeBookings) ? activeBookings.map((b) => b.room) : [];
+  const start = booking?.startTime ? new Date(booking.startTime) : null;
+  const end = booking?.endTime ? new Date(booking.endTime) : null;
+  const remaining = end && now ? Math.max(0, end.getTime() - now.getTime()) : 0;
 
-  const handleNowClick = () => setTimeNow(new Date());
+  const h = String(Math.floor(remaining / 3600000)).padStart(2, "0");
+  const m = String(Math.floor((remaining % 3600000) / 60000)).padStart(2, "0");
+  const s = String(Math.floor((remaining % 60000) / 1000)).padStart(2, "0");
 
-  const handleAdd = async () => {
-    if (!room || (!hours && !minutes) || !people) return;
-    if (usedRooms.includes(room)) return;
+  const totalPrice = booking?.totalPrice || 0;
+  const bonus = booking?.bonusMinutes || 0;
 
-    setSaving(true);
-
-    const duration = parseInt(hours || 0) * 60 + parseInt(minutes || 0);
-    let bonus = 0;
-    if (parseInt(hours) === 2 && !parseInt(minutes)) bonus = 30;
-    if (parseInt(hours) === 3 && !parseInt(minutes)) bonus = 60;
-
-    const totalDuration = duration + bonus;
-    const startTime = new Date(timeNow);
-    const endTime = new Date(startTime.getTime() + totalDuration * 60000);
-
-    const hourDec = startTime.getHours() + startTime.getMinutes() / 60;
-    const isDay = hourDec >= 10 && hourDec < 16.75;
-    const ratePer30 = isDay ? 22500 : 30000;
-    const ratePerHour = ratePer30 * 2;
-    const fullHours = Math.floor(duration / 60);
-    const extraMinutes = duration % 60;
-    const extraCharge = extraMinutes > 0 ? (extraMinutes / 30) * ratePer30 : 0;
-    const totalPrice = fullHours * ratePerHour + extraCharge;
-
-    await push(ref(db, "bookings"), {
-      room,
-      startTime: startTime.toISOString(),
-      endTime: endTime.toISOString(),
-      durationMinutes: duration,
-      bonusMinutes: bonus,
-      durationTotalMinutes: totalDuration,
-      people: parseInt(people),
-      cashier: kasir,
-      totalPrice,
-      status: "active",
-      createdAt: serverTimestamp(),
-    });
-
-    setRoom("");
-    setHours("");
-    setMinutes("");
-    setPeople("");
-    setSaving(false);
+  const handleCancel = async () => {
+    if (!id) return;
+    await remove(ref(db, `bookings/${id}`));
   };
 
   return (
-    <div className="bg-[#0F1117] rounded-3xl p-6 shadow-xl text-white flex flex-col gap-4 transition-all duration-500">
-      <h2 className="text-2xl font-semibold mb-2">Buat Pemesanan</h2>
-
-      <div>
-        <label className="block text-sm text-gray-400 mb-1">Pilih Ruangan</label>
-        <select
-          value={room}
-          onChange={(e) => setRoom(e.target.value)}
-          className="w-full bg-gray-900 border border-gray-800 text-white rounded-xl p-3 focus:ring-2 focus:ring-pink-500 outline-none"
-        >
-          <option value="">-- Pilih Ruangan --</option>
-          {allRooms.map((r) => (
-            <option key={r} value={r} disabled={usedRooms.includes(r)}>
-              {usedRooms.includes(r) ? `${r} (Terpakai)` : r}
-            </option>
-          ))}
-        </select>
+    <div className="bg-[#11141b] border border-gray-800 rounded-2xl p-5 shadow-md hover:shadow-xl hover:scale-[1.02] transition-all duration-300">
+      <div className="flex justify-between items-start mb-3">
+        <div>
+          <h3 className="text-lg font-semibold text-white">{booking?.room}</h3>
+          <p className="text-gray-400 text-sm">
+            {start && end ? `${start.toTimeString().slice(0, 5)} - ${end.toTimeString().slice(0, 5)}` : "—"}
+          </p>
+        </div>
+        {bonus > 0 && (
+          <span className="text-xs bg-pink-500/20 text-pink-400 px-2 py-1 rounded-full font-semibold">+{bonus}m</span>
+        )}
       </div>
 
-      <div>
-        <label className="block text-sm text-gray-400 mb-1">Jam Masuk</label>
-        <div className="flex gap-2">
-          <input
-            readOnly
-            value={timeNow.toTimeString().slice(0, 5)}
-            className="flex-1 bg-gray-900 border border-gray-800 text-gray-300 rounded-xl p-3"
-          />
-          <button
-            onClick={handleNowClick}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-sm font-semibold rounded-xl transition-all"
-          >
-            Sekarang
-          </button>
+      <div className="text-sm text-gray-300 mb-2">
+        👥 {booking?.people} orang • 💁‍♀️ Kasir: {booking?.cashier || "Tidak Diketahui"}
+      </div>
+
+      <div className="flex justify-between items-center mt-3">
+        <div className="font-mono text-green-400 text-lg">
+          {h}:{m}:{s}
+        </div>
+        <div className="text-green-300 font-semibold">
+          Rp {new Intl.NumberFormat("id-ID").format(totalPrice)}
         </div>
       </div>
 
-      <div>
-        <label className="block text-sm text-gray-400 mb-1">Durasi</label>
-        <div className="flex gap-2">
-          <input
-            type="number"
-            placeholder="Jam"
-            value={hours}
-            onChange={(e) => setHours(e.target.value)}
-            className="flex-1 bg-gray-900 border border-gray-800 rounded-xl p-3 text-gray-300"
-          />
-          <input
-            type="number"
-            placeholder="Menit"
-            value={minutes}
-            onChange={(e) => setMinutes(e.target.value)}
-            className="flex-1 bg-gray-900 border border-gray-800 rounded-xl p-3 text-gray-300"
-          />
-        </div>
-      </div>
-
-      <div>
-        <label className="block text-sm text-gray-400 mb-1">Jumlah Orang</label>
-        <input
-          type="number"
-          placeholder="Masukkan jumlah tamu"
-          value={people}
-          onChange={(e) => setPeople(e.target.value)}
-          className="w-full bg-gray-900 border border-gray-800 rounded-xl p-3 text-gray-300"
+      <div className="w-full bg-gray-800 h-2 rounded-full mt-2 overflow-hidden">
+        <div
+          style={{
+            width:
+              start && end ? `${Math.max(0, Math.min(100, ((end - now) / (end - start)) * 100))}%` : "0%",
+          }}
+          className="h-2 bg-gradient-to-r from-green-400 to-blue-400 transition-all duration-500"
         />
       </div>
 
       <button
-        disabled={saving || !room || (!hours && !minutes) || !people || usedRooms.includes(room)}
-        onClick={handleAdd}
-        className={`mt-2 py-3 font-semibold rounded-2xl transition-all ${
-          saving || usedRooms.includes(room)
-            ? "bg-gray-700 text-gray-400 cursor-not-allowed"
-            : "bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-600/30"
-        }`}
+        onClick={handleCancel}
+        className="w-full mt-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl font-semibold transition-all"
       >
-        {saving ? "Menyimpan..." : "+ Tambah Pemesanan"}
+        Batalkan
       </button>
     </div>
   );
