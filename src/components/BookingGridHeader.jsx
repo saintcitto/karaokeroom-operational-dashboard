@@ -1,85 +1,39 @@
-import React, { useState, useEffect } from "react";
-import { ref, onValue, remove } from "firebase/database";
-import { db } from "../firebaseConfig";
+import React from "react";
 import BookingCard from "./BookingCard";
 import BookingGridHeader from "./BookingGridHeader";
-import SidebarForm from "./SidebarForm";
 
-export default function BookingGrid({ kasir }) {
-  const [bookings, setBookings] = useState([]);
-  const [filter, setFilter] = useState("active");
-  const [loading, setLoading] = useState(true);
+export default function BookingGrid({ bookings = [], activeFilter = "active", onFilterChange = () => {} }) {
+  const list = Array.isArray(bookings) ? bookings : Object.keys(bookings || {}).map((k) => ({ ...bookings[k], id: k }));
 
-  useEffect(() => {
-    const bookingsRef = ref(db, "bookings");
-    const unsubscribe = onValue(bookingsRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const parsed = Object.entries(data).map(([id, val]) => ({
-          id,
-          ...val,
-        }));
-        setBookings(parsed);
-      } else {
-        setBookings([]);
-      }
-      setLoading(false);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  const handleCancel = async (id) => {
-    await remove(ref(db, `bookings/${id}`));
-  };
-
-  const now = new Date();
-  const activeBookings = bookings.filter((b) => new Date(b.endTime) > now);
-
-  const filteredBookings =
-    filter === "active"
-      ? activeBookings
-      : filter === "ending"
-      ? activeBookings.filter((b) => {
-          const diff = new Date(b.endTime) - now;
-          return diff <= 15 * 60000 && diff > 0;
-        })
-      : bookings.filter((b) => new Date(b.endTime) <= now);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center w-full h-screen text-white/60 font-medium">
-        Memuat data pemesanan...
-      </div>
-    );
-  }
+  const filtered = list.filter((b) => {
+    if (activeFilter === "active") return b.status === "active";
+    if (activeFilter === "ending") {
+      const end = b.endTime ? new Date(b.endTime) : null;
+      if (!end) return false;
+      const diffMin = (end.getTime() - Date.now()) / 60000;
+      return diffMin > 0 && diffMin <= 30;
+    }
+    if (activeFilter === "expired") {
+      const end = b.endTime ? new Date(b.endTime) : null;
+      return end && end.getTime() <= Date.now();
+    }
+    return true;
+  });
 
   return (
-    <div className="flex flex-col lg:flex-row gap-8 p-6 min-h-screen bg-[#0C0E13] text-white">
-      {/* Sidebar */}
-      <div className="lg:w-1/3 w-full">
-        <SidebarForm kasir={kasir} activeBookings={activeBookings} />
+    <section className="flex-1 px-8 py-6">
+      <div className="mb-6">
+        <div className="text-2xl font-bold text-white flex items-center gap-3">🎤 Pemesanan Aktif</div>
+        <BookingGridHeader activeFilter={activeFilter} onChange={onFilterChange} />
       </div>
 
-      {/* Booking Grid Section */}
-      <div className="flex-1">
-        <BookingGridHeader activeFilter={filter} onChange={setFilter} />
-        {filteredBookings && filteredBookings.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-            {filteredBookings.map((booking) => (
-              <BookingCard
-                key={booking.id}
-                booking={booking}
-                onCancel={handleCancel}
-              />
-            ))}
-          </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {filtered.length === 0 ? (
+          <div className="col-span-full text-gray-400">Belum ada pemesanan aktif.</div>
         ) : (
-          <div className="flex flex-col items-center justify-center mt-20 text-gray-500 select-none">
-            <div className="text-6xl mb-3">🎤</div>
-            <p className="text-gray-400 text-lg">Belum ada pemesanan aktif.</p>
-          </div>
+          filtered.map((b) => <BookingCard key={b.id || b.room} booking={b} />)
         )}
       </div>
-    </div>
+    </section>
   );
 }
