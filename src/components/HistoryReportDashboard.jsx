@@ -1,5 +1,4 @@
 import React, { useMemo } from "react";
-import { Card, CardContent } from "./ui/card";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
 export default function HistoryReportDashboard({ history = [] }) {
@@ -7,158 +6,108 @@ export default function HistoryReportDashboard({ history = [] }) {
   const todayStr = today.toISOString().split("T")[0];
 
   const filtered = useMemo(() => {
-    return history.filter((item) => {
-      const finishDate = new Date(item.finishedAt);
-      return finishDate.toISOString().startsWith(todayStr);
-    });
+    return history
+      .map((h) => {
+        const start = h.startTime ? new Date(h.startTime) : h.startTime;
+        const end = h.endTime ? new Date(h.endTime) : h.endTime;
+        const finishedAt = h.finishedAt ? new Date(h.finishedAt) : new Date();
+        return { ...h, _start: start, _end: end, _finishedAt: finishedAt };
+      })
+      .filter((item) => {
+        const f = item._finishedAt;
+        if (!f) return false;
+        if (!f.toISOString().startsWith(todayStr)) return false;
+        if (!item._start || !item._end) return false;
+        const durationMs = Math.abs(item._end - item._start);
+        const durationHours = Math.round(durationMs / 3600000);
+        return durationHours >= 1 && durationHours <= 5;
+      });
   }, [history, todayStr]);
 
   const shiftData = useMemo(() => {
     let pagi = 0;
     let malam = 0;
-    let kasirTotals = {};
-
+    const kasirTotals = {};
     filtered.forEach((entry) => {
-      const finishTime = new Date(entry.finishedAt);
+      const finishTime = entry._finishedAt;
       const hour = finishTime.getHours();
       const minute = finishTime.getMinutes();
-      const total = parseInt(entry.totalPrice) || 0;
-
+      const total = parseInt(entry.totalPrice || entry.total || 0, 10) || 0;
       const isShiftPagi = (hour > 9 && hour < 16) || (hour === 16 && minute < 45);
       const isShiftMalam = (hour > 16 || (hour === 16 && minute >= 45)) && hour <= 23;
-
       if (isShiftPagi) pagi += total;
       else if (isShiftMalam) malam += total;
-
-      if (entry.handledBy) {
-        kasirTotals[entry.handledBy] = (kasirTotals[entry.handledBy] || 0) + total;
-      }
+      if (entry.handledBy) kasirTotals[entry.handledBy] = (kasirTotals[entry.handledBy] || 0) + total;
     });
-
-    const kasirChart = Object.entries(kasirTotals).map(([kasir, total]) => ({
-      kasir,
-      total,
-    }));
-
+    const kasirChart = Object.entries(kasirTotals).map(([kasir, total]) => ({ kasir, total }));
     return { pagi, malam, total: pagi + malam, kasirChart };
   }, [filtered]);
 
   return (
-    <div className="flex flex-col gap-6 text-gray-100 font-sans">
+    <div className="flex flex-col gap-6 text-gray-100">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card className="bg-gradient-to-br from-emerald-600/20 to-emerald-400/10 border border-emerald-500/40 p-5 backdrop-blur-sm">
-          <CardContent>
-            <p className="text-sm text-gray-400">Pendapatan Shift Pagi (10.00–16.44)</p>
-            <h2 className="text-2xl font-bold text-emerald-400 mt-1">
-              Rp {shiftData.pagi.toLocaleString("id-ID")}
-            </h2>
-          </CardContent>
-        </Card>
+        <div className="bg-gradient-to-r from-green-700/10 to-emerald-500/6 border border-green-500/20 rounded-xl p-5">
+          <p className="text-sm text-gray-400">Pendapatan Shift Pagi (10.00 - 16.44)</p>
+          <h2 className="text-2xl font-bold text-green-400 mt-1">Rp {shiftData.pagi.toLocaleString("id-ID")}</h2>
+        </div>
 
-        <Card className="bg-gradient-to-br from-indigo-600/20 to-fuchsia-500/10 border border-indigo-500/40 p-5 backdrop-blur-sm">
-          <CardContent>
-            <p className="text-sm text-gray-400">Pendapatan Shift Malam (16.45–00.00)</p>
-            <h2 className="text-2xl font-bold text-indigo-400 mt-1">
-              Rp {shiftData.malam.toLocaleString("id-ID")}
-            </h2>
-          </CardContent>
-        </Card>
+        <div className="bg-gradient-to-r from-indigo-700/10 to-fuchsia-500/6 border border-indigo-500/20 rounded-xl p-5">
+          <p className="text-sm text-gray-400">Pendapatan Shift Malam (16.45 - 00.00)</p>
+          <h2 className="text-2xl font-bold text-indigo-400 mt-1">Rp {shiftData.malam.toLocaleString("id-ID")}</h2>
+        </div>
 
-        <Card className="bg-gradient-to-br from-gray-700/40 to-gray-900/40 border border-gray-600/40 p-5 backdrop-blur-sm">
-          <CardContent>
-            <p className="text-sm text-gray-400">Total Pendapatan Hari Ini</p>
-            <h2 className="text-2xl font-bold text-yellow-400 mt-1">
-              Rp {shiftData.total.toLocaleString("id-ID")}
-            </h2>
-          </CardContent>
-        </Card>
+        <div className="bg-gray-800/60 border border-gray-700/40 rounded-xl p-5">
+          <p className="text-sm text-gray-400">Total Pendapatan Hari Ini</p>
+          <h2 className="text-2xl font-bold text-yellow-400 mt-1">Rp {shiftData.total.toLocaleString("id-ID")}</h2>
+        </div>
       </div>
 
-      <Card className="bg-gray-800/70 border border-gray-700/50 rounded-xl backdrop-blur-md shadow-md">
-        <CardContent className="p-6">
-          <h3 className="text-lg font-semibold mb-4 text-gray-100">Grafik Transaksi per Kasir</h3>
-          {shiftData.kasirChart.length > 0 ? (
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart
-                data={shiftData.kasirChart}
-                margin={{ top: 10, right: 20, left: 0, bottom: 10 }}
-                barGap={14}
-              >
-                <XAxis
-                  dataKey="kasir"
-                  stroke="#9ca3af"
-                  tickLine={false}
-                  axisLine={{ stroke: "#4b5563" }}
-                />
-                <YAxis
-                  stroke="#9ca3af"
-                  tickLine={false}
-                  axisLine={{ stroke: "#4b5563" }}
-                />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "#111827",
-                    border: "1px solid #374151",
-                    borderRadius: "8px",
-                    color: "#fff",
-                    fontSize: "12px",
-                  }}
-                  cursor={{ fill: "rgba(167,139,250,0.08)" }}
-                />
-                <Bar
-                  dataKey="total"
-                  fill="url(#colorGradient)"
-                  radius={[8, 8, 0, 0]}
-                  barSize={42}
-                />
-                <defs>
-                  <linearGradient id="colorGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#a78bfa" stopOpacity={1} />
-                    <stop offset="100%" stopColor="#6366f1" stopOpacity={0.8} />
-                  </linearGradient>
-                </defs>
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <p className="text-gray-400 text-sm text-center">Belum ada transaksi untuk hari ini.</p>
-          )}
-        </CardContent>
-      </Card>
+      <div className="bg-gray-800/60 border border-gray-700/40 rounded-xl p-6">
+        <h3 className="text-lg font-semibold mb-4 text-gray-100">Grafik Transaksi per Kasir</h3>
+        {shiftData.kasirChart.length > 0 ? (
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={shiftData.kasirChart}>
+              <XAxis dataKey="kasir" stroke="#9ca3af" />
+              <YAxis stroke="#9ca3af" />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: "#1f2937",
+                  border: "1px solid #374151",
+                  borderRadius: "8px",
+                  color: "#fff"
+                }}
+              />
+              <Bar dataKey="total" fill="#8b5cf6" radius={[6, 6, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        ) : (
+          <p className="text-gray-400 text-sm text-center">Belum ada transaksi untuk hari ini.</p>
+        )}
+      </div>
 
-      <Card className="bg-gray-800/70 border border-gray-700/50 rounded-xl backdrop-blur-md shadow-md">
-        <CardContent className="p-6">
-          <h3 className="text-lg font-semibold mb-4 text-gray-100">Aktivitas Pemesanan Hari Ini</h3>
-          {filtered.length > 0 ? (
-            <div className="space-y-3 max-h-80 overflow-y-auto pr-1 custom-scrollbar">
-              {filtered.map((entry) => {
-                const t = new Date(entry.finishedAt);
-                const time = t.toLocaleTimeString("id-ID", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                });
-
-                return (
-                  <div
-                    key={entry.id}
-                    className="flex justify-between items-center bg-gray-900/50 px-4 py-3 rounded-lg border border-gray-700/40 hover:bg-gray-900/70 transition-all duration-200"
-                  >
-                    <div>
-                      <p className="text-sm font-medium text-white">{entry.room}</p>
-                      <p className="text-xs text-gray-400">
-                        Kasir: <span className="text-gray-300">{entry.handledBy}</span> • Rp{" "}
-                        {entry.totalPrice.toLocaleString("id-ID")}
-                      </p>
-                    </div>
-                    <span className="text-xs text-gray-500">{time}</span>
+      <div className="bg-gray-800/60 border border-gray-700/40 rounded-xl p-6">
+        <h3 className="text-lg font-semibold mb-4 text-gray-100">Aktivitas Pemesanan Hari Ini</h3>
+        {filtered.length > 0 ? (
+          <div className="space-y-3 max-h-72 overflow-y-auto">
+            {filtered.map((entry) => {
+              const t = new Date(entry._finishedAt);
+              const time = t.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+              const price = parseInt(entry.totalPrice || entry.total || 0, 10) || 0;
+              return (
+                <div key={entry.id || entry._finishedAt.getTime()} className="flex justify-between items-center bg-gray-900/60 px-4 py-3 rounded-lg border border-gray-700/50 hover:bg-gray-900/80 transition-all">
+                  <div>
+                    <p className="text-sm font-medium text-white">{entry.room}</p>
+                    <p className="text-xs text-gray-400">Kasir: {entry.handledBy || "-"} • Rp {price.toLocaleString("id-ID")}</p>
                   </div>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="text-gray-400 text-sm text-center">Belum ada aktivitas pemesanan hari ini.</p>
-          )}
-        </CardContent>
-      </Card>
+                  <span className="text-xs text-gray-500">{time}</span>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-gray-400 text-sm text-center">Belum ada aktivitas pemesanan hari ini.</p>
+        )}
+      </div>
     </div>
   );
 }
