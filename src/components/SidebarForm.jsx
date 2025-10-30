@@ -161,11 +161,6 @@ export default function SidebarForm({ kasir = "Tidak Diketahui" }) {
           {saving ? "Menyimpan..." : "+ Tambah Pemesanan"}
         </button>
       </div>
-
-      <div className="mt-6 text-xs text-gray-400 border-t border-gray-800 pt-4 leading-relaxed">
-        <div className="text-gray-300 mb-2">Siang (10.00–16.44): Rp22.500 / 30 menit</div>
-        <div className="text-gray-300">Malam (16.45–00.00): Rp30.000 / 30 menit</div>
-      </div>
     </aside>
   );
 }
