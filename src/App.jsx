@@ -29,10 +29,10 @@ const USER_ROLES = {
 export default function App() {
   const [bookings, setBookings] = useState([]);
   const [now, setNow] = useState(new Date());
-  const [expiredBookings, setExpiredBookings] = useState([]);  
+  const [expiredBookings, setExpiredBookings] = useState([]);
   const [formPrefill, setFormPrefill] = useState(null);
-  const [currentUser, setCurrentUser] = useState(() => localStorage.getItem("currentUser") || "");
-  const [role, setRole] = useState(() => USER_ROLES[localStorage.getItem("currentUser")] || null);
+  const [currentUser, setCurrentUser] = useState(localStorage.getItem("currentUser") || "");
+  const [role, setRole] = useState(USER_ROLES[localStorage.getItem("currentUser")] || null);
   const [history, setHistory] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
   const alarmRef = useRef(null);
@@ -46,30 +46,17 @@ export default function App() {
 
   useEffect(() => {
     const bookingsRef = ref(db, "bookings");
-    const unsub = onValue(
-      bookingsRef,
-      (snapshot) => {
-        const data = snapshot.val();
-        if (!data) {
-          setBookings([]);
-          return;
-        }
-        const parsed = Object.entries(data)
-          .map(([id, v]) => {
-            const st = v.startTime ? new Date(v.startTime) : null;
-            const et = v.endTime ? new Date(v.endTime) : null;
-            return {
-              id,
-              ...v,
-              startTime: st,
-              endTime: et,
-            };
-          })
-          .filter((b) => b.startTime instanceof Date && !isNaN(b.startTime) && b.endTime instanceof Date && !isNaN(b.endTime));
-        setBookings(parsed);
-      },
-      () => setBookings([])
-    );
+    const unsub = onValue(bookingsRef, (snapshot) => {
+      const data = snapshot.val();
+      if (!data) return setBookings([]);
+      const parsed = Object.entries(data).map(([id, v]) => ({
+        id,
+        ...v,
+        startTime: new Date(v.startTime),
+        endTime: new Date(v.endTime),
+      }));
+      setBookings(parsed);
+    });
     return () => unsub();
   }, []);
 
@@ -86,27 +73,19 @@ export default function App() {
 
   useEffect(() => {
     if (!bookings.length) return;
-    const expiredNow = bookings.find(
-      (b) =>
-        !b.expired &&
-        b.endTime instanceof Date &&
-        b.endTime <= now &&
-        !expireLockRef.current[b.id]
+    const expiredNow = bookings.filter(
+      (b) => !b.expired && b.endTime <= now && !expireLockRef.current[b.id]
     );
-    if (expiredNow) {
-      expireLockRef.current[expiredNow.id] = true;
-      handleExpire(expiredNow);
-    }
+    expiredNow.forEach((booking) => {
+      expireLockRef.current[booking.id] = true;
+      handleExpire(booking);
+    });
   }, [bookings, now]);
-
-  useEffect(() => {
-    expireLockRef.current = {};
-  }, [currentUser]);
 
   const handleLogin = async (user) => {
     try {
       await ToneStart();
-      if (ToneContext.state !== "running") await ToneContext.resume();
+      await ToneContext.resume();
     } catch {}
     localStorage.setItem("currentUser", user);
     setCurrentUser(user);
@@ -123,14 +102,12 @@ export default function App() {
         const lfo = new LFO("2n", 400, 1600).start();
         lfo.connect(filter.frequency);
         const playPattern = () => {
-          const t = ToneContext.currentTime + 0.05;
+          const t = ToneContext.currentTime + 0.1;
           synth.triggerAttackRelease(["A5", "E6"], "8n", t);
           synth.triggerAttackRelease(["C6", "G5"], "8n", t + 0.4);
         };
         Transport.scheduleRepeat(playPattern, "1.2s", "+0.1");
-        if (Transport.state !== "started") {
-          Transport.start("+0.1");
-        }
+        Transport.start("+0.1");
         alarmRef.current = { synth, filter, lfo };
       }
     } catch (err) {
@@ -141,12 +118,12 @@ export default function App() {
   const stopAlarm = useCallback(() => {
     try {
       if (alarmRef.current) {
-        try { alarmRef.current.lfo.stop(); } catch {}
-        try { alarmRef.current.synth.dispose(); } catch {}
-        try { alarmRef.current.filter.dispose(); } catch {}
+        alarmRef.current.lfo.stop();
+        alarmRef.current.synth.dispose();
+        alarmRef.current.filter.dispose();
         alarmRef.current = null;
       }
-      if (Transport.state === "started") Transport.stop();
+      Transport.stop();
       Transport.cancel();
     } catch (err) {
       console.error("Alarm stop error:", err);
@@ -158,8 +135,8 @@ export default function App() {
     const path = ref(db, "bookings/" + newBooking.id);
     set(path, {
       ...newBooking,
-      startTime: newBooking.startTime instanceof Date ? newBooking.startTime.toISOString() : newBooking.startTime,
-      endTime: newBooking.endTime instanceof Date ? newBooking.endTime.toISOString() : newBooking.endTime,
+      startTime: newBooking.startTime.toISOString(),
+      endTime: newBooking.endTime.toISOString(),
     });
   };
 
@@ -168,10 +145,9 @@ export default function App() {
     try {
       await remove(ref(db, "bookings/" + bookingId));
       delete expireLockRef.current[bookingId];
-      if (expiredBooking?.id === bookingId) setExpiredBooking(null);
+      setExpiredBookings((prev) => prev.filter((b) => b.id !== bookingId));
     } catch (err) {
       console.error("Failed to remove booking:", err);
-      alert("Gagal menghapus data booking: " + (err.message || err));
     }
   };
 
@@ -179,40 +155,33 @@ export default function App() {
     (booking) => {
       if (!booking?.id) return;
       update(ref(db, "bookings/" + booking.id), { expired: true })
-        .then(async () => {
-          setExpiredBooking({ ...booking, expired: true });
-          await startAlarm();
+        .then(() => {
+          setExpiredBookings((prev) => {
+            const exists = prev.find((b) => b.id === booking.id);
+            if (exists) return prev;
+            return [...prev, { ...booking, expired: true }];
+          });
+          startAlarm();
         })
-        .catch((err) => {
-          console.error("Failed to mark expired:", err);
-          expireLockRef.current[booking.id] = false;
-        });
+        .catch((err) => console.error("Failed to mark expired:", err));
     },
     [startAlarm]
   );
 
   const handleCompleteSession = useCallback(
     async (bookingId) => {
-      if (!bookingId) return;
       const finishedBooking = bookings.find((b) => b.id === bookingId);
-      try {
-        if (finishedBooking) {
-          const historyRef = push(ref(db, "history"));
-          await set(historyRef, {
-            ...finishedBooking,
-            finishedAt: new Date().toISOString(),
-            handledBy: currentUser || "unknown",
-          });
-        }
-        stopAlarm();
-        await remove(ref(db, "bookings/" + bookingId));
-      } catch (err) {
-        console.error("Error completing session:", err);
-        alert("Gagal menyelesaikan sesi: " + (err.message || err));
-      } finally {
-        delete expireLockRef.current[bookingId];
-        setExpiredBooking(null);
+      if (finishedBooking) {
+        const historyRef = push(ref(db, "history"));
+        await set(historyRef, {
+          ...finishedBooking,
+          finishedAt: new Date().toISOString(),
+          handledBy: currentUser,
+        });
       }
+      await remove(ref(db, "bookings/" + bookingId));
+      setExpiredBookings((prev) => prev.filter((b) => b.id !== bookingId));
+      stopAlarm();
     },
     [bookings, currentUser, stopAlarm]
   );
@@ -221,13 +190,12 @@ export default function App() {
     (booking) => {
       if (!booking) return;
       stopAlarm();
-      setExpiredBooking(null);
+      setExpiredBookings((prev) => prev.filter((b) => b.id !== booking.id));
       setFormPrefill({
         room: booking.room,
         startTime: formatTimeForInput(booking.endTime),
       });
       removeBooking(booking.id);
-      delete expireLockRef.current[booking.id];
     },
     [stopAlarm]
   );
@@ -235,9 +203,7 @@ export default function App() {
   useEffect(() => {
     if (currentUser === "Baya Ganteng") {
       const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-        if (!firebaseUser) {
-          console.warn("Admin not authenticated in Firebase Auth");
-        }
+        if (firebaseUser) console.log("Admin auth active:", firebaseUser.email);
       });
       return () => unsubscribe();
     }
@@ -246,7 +212,6 @@ export default function App() {
   if (!currentUser) return <UserLogin onLogin={handleLogin} />;
 
   const safeBookings = Array.isArray(bookings) ? bookings : [];
-  const safeHistory = Array.isArray(history) ? history : [];
   const canViewHistory = role === ROLES.ADMIN;
   const canManageBookings = [ROLES.ADMIN, ROLES.CASHIER, ROLES.STAFF].includes(role);
 
@@ -289,50 +254,46 @@ export default function App() {
             <div className="flex items-center gap-3">
               {showHistory ? (
                 <button
-                  onClick={() => {
-                    setShowHistory(false);
-                    setFormPrefill(null);
-                    setExpiredBooking(null);
-                  }}
+                  onClick={() => setShowHistory(false)}
                   className="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-lg text-sm font-medium shadow-md transition-all"
                 >
                   ← Kembali ke Pemesanan
                 </button>
-              ) : canViewHistory ? (
-                <button
-                  onClick={() => setShowHistory(true)}
-                  className="px-4 py-2 bg-gradient-to-r from-fuchsia-500 to-pink-600 text-white rounded-lg text-sm font-medium shadow-md transition-all"
-                >
-                  📈 Lihat Laporan Harian
-                </button>
-              ) : null}
+              ) : (
+                canViewHistory && (
+                  <button
+                    onClick={() => setShowHistory(true)}
+                    className="px-4 py-2 bg-gradient-to-r from-fuchsia-500 to-pink-600 text-white rounded-lg text-sm font-medium shadow-md transition-all"
+                  >
+                    📈 Lihat Laporan Harian
+                  </button>
+                )
+              )}
             </div>
           </div>
 
           <div className="transition-all duration-500 ease-in-out p-6">
             {showHistory && canViewHistory ? (
-              <HistoryReportDashboard history={safeHistory} onClose={() => setShowHistory(false)} />
+              <HistoryReportDashboard history={history} onClose={() => setShowHistory(false)} />
             ) : (
               <BookingGrid
                 bookings={safeBookings}
                 now={now}
-                onExpire={(b) => handleExpire(b)}
-                onCancelBooking={(id) => id && removeBooking(id)}
+                onExpire={handleExpire}
+                onCancelBooking={removeBooking}
               />
             )}
           </div>
         </main>
-        
+
         {expiredBookings.map((b) => (
-      <ExpiredModal
-        key={b.id}
-        booking={b}
-        onComplete={(id) => handleCompleteSession(id)}
-        onExtend={(bk) => handleExtendSession(bk)}
-        onClose={() => setExpiredBookings((prev) => prev.filter((x) => x.id !== b.id))}
-        />
-    ))}
-        )}
+          <ExpiredModal
+            key={b.id}
+            booking={b}
+            onComplete={handleCompleteSession}
+            onExtend={handleExtendSession}
+          />
+        ))}
       </div>
     </KTVErrorBoundary>
   );
