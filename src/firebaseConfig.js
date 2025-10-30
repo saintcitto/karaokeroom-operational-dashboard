@@ -1,4 +1,5 @@
-import { initializeApp } from "firebase/app";
+// src/firebaseConfig.js
+import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getDatabase, ref, set, onValue, remove, update, push } from "firebase/database";
 
@@ -7,13 +8,22 @@ const firebaseConfig = {
   authDomain: "karaokeroom-dashboard.firebaseapp.com",
   databaseURL: "https://karaokeroom-dashboard-default-rtdb.asia-southeast1.firebasedatabase.app",
   projectId: "karaokeroom-dashboard",
-  storageBucket: "karaokeroom-dashboard.firebasestorage.app",
+  storageBucket: "karaokeroom-dashboard.appspot.com",
   messagingSenderId: "744255253265",
   appId: "1:744255253265:web:f26619f72edc5e8ffb3ab0",
   measurementId: "G-HMTFSDEWX8"
 };
 
-const app = initializeApp(firebaseConfig);
-export const db = getDatabase(app);
-export const auth = getAuth(app);
-export { ref, set, onValue, remove, update, push };
+const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+
+let db, auth;
+
+try {
+  db = getDatabase(app);
+  auth = getAuth(app);
+  console.log("🔥 Firebase initialized successfully!");
+} catch (err) {
+  console.error("❌ Firebase initialization failed:", err);
+}
+
+export { db, auth, ref, set, onValue, remove, update, push };
