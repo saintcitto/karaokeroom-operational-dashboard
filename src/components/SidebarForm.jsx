@@ -1,250 +1,152 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
+import { ref, push, serverTimestamp } from "firebase/database";
+import { db } from "../firebase";
 
-export default function SidebarForm({
-  activeRoomNames,
-  onAddBooking,
-  onShowHistory,
-  currentUser
-}) {
-  const [room, setRoom] = useState('');
-  const [startTime, setStartTime] = useState('');
-  const [durationHours, setDurationHours] = useState('');
-  const [durationMinutes, setDurationMinutes] = useState('');
-  const [people, setPeople] = useState('');
-  const [calculated, setCalculated] = useState(null);
+export default function SidebarForm({ kasir }) {
+  const [room, setRoom] = useState("");
+  const [jam, setJam] = useState("");
+  const [menit, setMenit] = useState("");
+  const [jumlahOrang, setJumlahOrang] = useState("");
 
-  const sanitizeNumber = (value, allowZero = false) => {
-    if (value === '') return '';
-    const cleaned = value.replace(/[^0-9]/g, '');
-    if (cleaned === '') return '';
-    const num = Number(cleaned);
-    if (!allowZero && num === 0) return '';
-    return num;
-  };
-
-  useEffect(() => {
-    if (!startTime || (!durationHours && !durationMinutes)) {
-      setCalculated(null);
-      return;
-    }
-
-    const now = new Date();
-    const [hour, minute] = startTime.split(':').map(Number);
-    const start = new Date(now);
-    start.setHours(hour, minute, 0, 0);
-
-    const durH = Number(durationHours) || 0;
-    const durM = Number(durationMinutes) || 0;
-    const totalMinutes = durH * 60 + durM;
-
-    // tarif
-    const startHour = start.getHours();
-    const startMin = start.getMinutes();
-    let rate = 45000;
-    if (startHour > 16 || (startHour === 16 && startMin >= 45)) {
-      rate = 60000;
-    }
-
-    // bonus
-    let bonus = 0;
-    let promo = null;
-    if (durH >= 3) {
-      bonus = 60;
-      promo = "Gratis 1 jam";
-    } else if (durH >= 2) {
-      bonus = 30;
-      promo = "Gratis 30 menit";
-    }
-
-    const paidHours = totalMinutes / 60;
-    const totalPaid = paidHours * rate;
-
-    const totalMinutesDisplay = totalMinutes + bonus;
-    const hours = Math.floor(totalMinutesDisplay / 60);
-    const minutes = totalMinutesDisplay % 60;
-
-    setCalculated({
-      rate,
-      promo,
-      bonus,
-      totalPaid,
-      totalDisplay: `${hours} jam ${minutes ? minutes + ' menit' : ''}`,
-    });
-  }, [startTime, durationHours, durationMinutes]);
-
-  const handleAddBooking = () => {
-    if (!room || !startTime) return alert('Pilih ruangan dan jam masuk!');
-    if (!durationHours && !durationMinutes)
-      return alert('Durasi tidak boleh kosong atau nol!');
-    if (!people || Number(people) <= 0)
-      return alert('Jumlah orang minimal 1!');
+  const handleAddBooking = async () => {
+    if (!room || (!jam && !menit) || !jumlahOrang) return;
 
     const start = new Date();
-    const [hour, minute] = startTime.split(':').map(Number);
-    start.setHours(hour, minute, 0, 0);
+    const hour = start.getHours();
+    const totalMinutes = parseInt(jam || 0) * 60 + parseInt(menit || 0);
 
-    const durH = Number(durationHours) || 0;
-    const durM = Number(durationMinutes) || 0;
-
+    let duration = totalMinutes;
     let bonusMinutes = 0;
-    if (durH >= 3) bonusMinutes = 60;
-    else if (durH >= 2) bonusMinutes = 30;
 
-    const totalMinutes = durH * 60 + durM + bonusMinutes;
-    const end = new Date(start.getTime() + totalMinutes * 60000);
+    if (parseInt(jam) === 2 && parseInt(menit) === 0) bonusMinutes = 30;
+    else if (parseInt(jam) === 3 && parseInt(menit) === 0) bonusMinutes = 60;
 
-    const startHour = start.getHours();
-    const startMin = start.getMinutes();
-    let rate = 45000;
-    if (startHour > 16 || (startHour === 16 && startMin >= 45)) rate = 60000;
+    const end = new Date(start.getTime() + (duration + bonusMinutes) * 60000);
 
-    const paidHours = (durH * 60 + durM) / 60;
-    const totalPrice = paidHours * rate;
-    const promo =
-      durH >= 3 ? "Gratis 1 jam" : durH >= 2 ? "Gratis 30 menit" : "-";
+    const isDay = hour >= 10 && hour < 16.75;
+    const ratePer30 = isDay ? 22500 : 30000;
+    const ratePerHour = ratePer30 * 2;
 
-    onAddBooking({
-      id: `${room}-${Date.now()}`,
+    const fullHours = Math.floor(duration / 60);
+    const extraMinutes = duration % 60;
+    const extraCharge = extraMinutes > 0 ? (extraMinutes / 30) * ratePer30 : 0;
+
+    const totalPrice = fullHours * ratePerHour + extraCharge;
+
+    const newBooking = {
       room,
-      startTime: start,
-      endTime: end,
-      people: Number(people),
+      startTime: start.toISOString(),
+      endTime: end.toISOString(),
+      durationMinutes: duration + bonusMinutes,
+      bonusMinutes,
+      people: parseInt(jumlahOrang),
+      cashier: kasir,
+      pricePer30Min: ratePer30,
       totalPrice,
-      promo,
-      expired: false,
-      handledBy: currentUser,
-    });
+      status: "active",
+      createdAt: serverTimestamp(),
+    };
 
-    setRoom('');
-    setDurationHours('');
-    setDurationMinutes('');
-    setPeople('');
-    setCalculated(null);
+    await push(ref(db, "bookings"), newBooking);
+    setRoom("");
+    setJam("");
+    setMenit("");
+    setJumlahOrang("");
   };
 
+  const rooms = [
+    "KTV 1",
+    "KTV 2",
+    "KTV 3",
+    "KTV 4",
+    "KTV 5",
+    "KTV 8",
+    "KTV 9",
+    "KTV 10",
+    "KTV 11",
+    "KTV 12",
+  ];
+
   return (
-    <div className="p-4 space-y-4 relative">
-      <h2 className="text-lg font-bold mb-2 text-gray-100">Buat Pemesanan Baru</h2>
+    <div className="w-full bg-gray-900 p-4 rounded-xl text-white shadow-xl">
+      <p className="text-pink-400 font-bold mb-2">Login sebagai: {kasir}</p>
+      <h2 className="text-xl font-semibold mb-4">Buat Pemesanan Baru</h2>
 
-      <div>
-        <label className="text-sm text-gray-300">Pilih Ruangan</label>
-        <select
-          value={room}
-          onChange={(e) => setRoom(e.target.value)}
-          className="w-full mt-1 p-2 bg-gray-700 text-white rounded"
-        >
-          <option value="">-- Pilih Ruangan --</option>
-          {[...Array(10)].map((_, i) => (
-            <option
-              key={i}
-              value={`KTV ${i + 1}`}
-              disabled={activeRoomNames.includes(`KTV ${i + 1}`)}
-            >
-              KTV {i + 1}
-            </option>
-          ))}
-        </select>
-      </div>
+      <label className="block text-sm mb-1">Pilih Ruangan</label>
+      <select
+        value={room}
+        onChange={(e) => setRoom(e.target.value)}
+        className="w-full mb-3 p-2 bg-gray-800 border border-gray-700 rounded focus:ring-2 focus:ring-pink-500 focus:outline-none"
+      >
+        <option value="">-- Pilih Ruangan --</option>
+        {rooms.map((r) => (
+          <option key={r} value={r}>
+            {r}
+          </option>
+        ))}
+      </select>
 
-      <div>
-        <label className="text-sm text-gray-300">Jam Masuk</label>
-        <div className="flex items-center space-x-2">
-          <input
-            type="time"
-            value={startTime}
-            onChange={(e) => setStartTime(e.target.value)}
-            className="flex-1 p-2 bg-gray-700 text-white rounded"
-          />
-          <button
-            onClick={() => {
-              const now = new Date();
-              const jam = String(now.getHours()).padStart(2, '0');
-              const menit = String(now.getMinutes()).padStart(2, '0');
-              setStartTime(`${jam}:${menit}`);
-            }}
-            className="bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded text-sm"
-          >
-            Sekarang
-          </button>
-        </div>
-      </div>
-
-      <div className="flex space-x-2">
-        <div className="flex-1">
-          <label className="text-sm text-gray-300">Durasi</label>
-          <div className="flex space-x-2">
-            <input
-              type="text"
-              inputMode="numeric"
-              value={durationHours}
-              onChange={(e) => setDurationHours(sanitizeNumber(e.target.value))}
-              className="w-full p-2 bg-gray-700 text-white rounded"
-              placeholder="Jam"
-            />
-            <span className="text-gray-400 self-center">Jam</span>
-            <input
-              type="text"
-              inputMode="numeric"
-              value={durationMinutes}
-              onChange={(e) => setDurationMinutes(sanitizeNumber(e.target.value, true))}
-              className="w-full p-2 bg-gray-700 text-white rounded"
-              placeholder="Menit"
-            />
-            <span className="text-gray-400 self-center">Menit</span>
-          </div>
-        </div>
-      </div>
-
-      <div>
-        <label className="text-sm text-gray-300">Jumlah Orang</label>
+      <label className="block text-sm mb-1">Jam Masuk</label>
+      <div className="flex gap-2 mb-3">
         <input
           type="text"
-          inputMode="numeric"
-          value={people}
-          onChange={(e) => setPeople(sanitizeNumber(e.target.value))}
-          className="w-full mt-1 p-2 bg-gray-700 text-white rounded"
-          placeholder="Masukkan jumlah tamu"
+          readOnly
+          value={new Date().toTimeString().slice(0, 5)}
+          className="flex-1 p-2 bg-gray-800 border border-gray-700 rounded text-gray-300"
+        />
+        <button
+          className="bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded text-sm font-medium"
+          onClick={() => setJam("")}
+        >
+          Sekarang
+        </button>
+      </div>
+
+      <label className="block text-sm mb-1">Durasi</label>
+      <div className="flex gap-2 mb-3">
+        <input
+          type="number"
+          placeholder="Jam"
+          value={jam}
+          onChange={(e) => setJam(e.target.value)}
+          className="w-1/2 p-2 bg-gray-800 border border-gray-700 rounded focus:ring-2 focus:ring-pink-500 focus:outline-none"
+        />
+        <input
+          type="number"
+          placeholder="Menit"
+          value={menit}
+          onChange={(e) => setMenit(e.target.value)}
+          className="w-1/2 p-2 bg-gray-800 border border-gray-700 rounded focus:ring-2 focus:ring-pink-500 focus:outline-none"
         />
       </div>
 
-      {calculated && (
-        <div className="bg-gray-700/60 rounded-lg p-3 mt-2 text-sm text-gray-100 border border-gray-600">
-          <p>
-            💵 Tarif: <span className="font-semibold">Rp {calculated.rate.toLocaleString()}</span>/jam
-          </p>
-          <p>
-            ⏱ Total waktu: <span className="font-semibold">{calculated.totalDisplay}</span>
-          </p>
-          {calculated.promo && (
-            <p className="text-green-400">🎁 {calculated.promo}</p>
-          )}
-          <p className="mt-1">
-            💰 Estimasi Bayar:{" "}
-            <span className="font-bold text-yellow-400">
-              Rp {calculated.totalPaid.toLocaleString()}
-            </span>
-          </p>
-        </div>
-      )}
+      <label className="block text-sm mb-1">Jumlah Orang</label>
+      <input
+        type="number"
+        placeholder="Masukkan jumlah tamu"
+        value={jumlahOrang}
+        onChange={(e) => setJumlahOrang(e.target.value)}
+        className="w-full p-2 mb-4 bg-gray-800 border border-gray-700 rounded focus:ring-2 focus:ring-pink-500 focus:outline-none"
+      />
 
       <button
         onClick={handleAddBooking}
-        className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2 rounded"
+        className="w-full bg-green-600 hover:bg-green-700 py-3 rounded-lg font-semibold transition duration-200"
       >
         + Tambah Pemesanan
       </button>
 
-      {currentUser === 'Baya Ganteng' && (
-        <button
-          onClick={onShowHistory}
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 rounded"
-        >
-          📊 Data Historis
-        </button>
-      )}
-
-      <div className="text-xs text-gray-400 border-t border-gray-700 pt-3">
-        Promo otomatis: 30 menit gratis untuk durasi ≥ 2 jam, dan 1 jam gratis untuk durasi ≥ 3 jam.
+      <div className="mt-6 text-sm text-gray-400 border-t border-gray-700 pt-3 leading-relaxed">
+        <p>
+          <span className="text-pink-400 font-semibold">Promo hanya berlaku:</span>
+          <br />• 2 jam → +30 menit gratis
+          <br />• 3 jam → +1 jam gratis
+        </p>
+        <p className="mt-3">
+          <span className="text-green-400">Siang (10.00–16.44):</span> Rp22.500 / 30 menit
+          <br />
+          <span className="text-blue-400">Malam (16.45–00.00):</span> Rp30.000 / 30 menit
+        </p>
       </div>
     </div>
   );
