@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
-import { ref, push, serverTimestamp, get } from "firebase/database";
+import { ref, push, serverTimestamp } from "firebase/database";
 import { db } from "../firebaseConfig";
 
-export default function SidebarForm({ kasir, activeBookings }) {
+export default function SidebarForm({ kasir, activeBookings = [] }) {
   const [room, setRoom] = useState("");
   const [jam, setJam] = useState("");
   const [menit, setMenit] = useState("");
@@ -54,11 +54,18 @@ export default function SidebarForm({ kasir, activeBookings }) {
     };
 
     await push(ref(db, "bookings"), newBooking);
-    setRoom(""); setJam(""); setMenit(""); setJumlahOrang(""); setIsSaving(false);
+    setRoom(""); setJam(""); setMenit(""); setJumlahOrang("");
+    setIsSaving(false);
   };
 
-  const rooms = ["KTV 1", "KTV 2", "KTV 3", "KTV 4", "KTV 5", "KTV 8", "KTV 9", "KTV 10", "KTV 11", "KTV 12"];
-  const usedRooms = activeBookings.map(b => b.room);
+  const allRooms = [
+    "KTV 1", "KTV 2", "KTV 3", "KTV 4", "KTV 5",
+    "KTV 8", "KTV 9", "KTV 10", "KTV 11", "KTV 12"
+  ];
+
+  const usedRooms = Array.isArray(activeBookings)
+    ? activeBookings.map((b) => b.room)
+    : [];
 
   return (
     <div className="w-full bg-[#0F1117] rounded-3xl shadow-[0_0_25px_rgba(255,255,255,0.05)] text-white p-6 transition-all duration-500 ease-out">
@@ -71,7 +78,7 @@ export default function SidebarForm({ kasir, activeBookings }) {
         className="w-full mb-3 p-3 bg-gray-900 rounded-xl border border-gray-700 focus:ring-2 focus:ring-pink-500 transition-all"
       >
         <option value="">-- Pilih Ruangan --</option>
-        {rooms.map((r) => (
+        {allRooms.map((r) => (
           <option key={r} value={r} disabled={usedRooms.includes(r)}>
             {usedRooms.includes(r) ? `${r} (Terpakai)` : r}
           </option>
