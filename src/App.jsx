@@ -30,9 +30,9 @@ export default function App() {
   const [role, setRole] = useState(USER_ROLES[localStorage.getItem("currentUser")] || null);
   const [history, setHistory] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
-  const [dataLoaded, setDataLoaded] = useState(false);
   const alarmRef = useRef(null);
   const expireLockRef = useRef({});
+  const isAlarmActive = useRef(false);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -42,31 +42,19 @@ export default function App() {
 
   useEffect(() => {
     const bookingsRef = ref(db, "bookings");
-    const unsubscribe = onValue(
-      bookingsRef,
-      (snapshot) => {
-        const data = snapshot.val();
-        if (!data) {
-          setBookings([]);
-          setDataLoaded(true);
-          return;
-        }
-        const parsed = Object.entries(data)
-          .map(([id, v]) => ({
-            id,
-            ...v,
-            startTime: v.startTime ? new Date(v.startTime) : null,
-            endTime: v.endTime ? new Date(v.endTime) : null
-          }))
-          .filter((b) => b.startTime && b.endTime);
-        setBookings(parsed);
-        setDataLoaded(true);
-      },
-      () => {
-        setBookings([]);
-        setDataLoaded(true);
-      }
-    );
+    const unsubscribe = onValue(bookingsRef, (snapshot) => {
+      const data = snapshot.val();
+      if (!data) return setBookings([]);
+      const parsed = Object.entries(data)
+        .map(([id, v]) => ({
+          id,
+          ...v,
+          startTime: v.startTime ? new Date(v.startTime) : null,
+          endTime: v.endTime ? new Date(v.endTime) : null
+        }))
+        .filter((b) => b.startTime && b.endTime);
+      setBookings(parsed);
+    });
     return () => unsubscribe();
   }, []);
 
@@ -82,15 +70,19 @@ export default function App() {
   }, [role]);
 
   useEffect(() => {
-    if (!dataLoaded || !bookings.length) return;
+    if (!bookings.length) return;
     const expiredNow = bookings.find(
-      (b) => !b.expired && b.endTime instanceof Date && b.endTime <= now && !expireLockRef.current[b.id]
+      (b) =>
+        !b.expired &&
+        b.endTime instanceof Date &&
+        b.endTime <= now &&
+        !expireLockRef.current[b.id]
     );
     if (expiredNow) {
       expireLockRef.current[expiredNow.id] = true;
       handleExpire(expiredNow);
     }
-  }, [bookings, now, dataLoaded]);
+  }, [bookings, now]);
 
   const handleLogin = async (user) => {
     try {
@@ -104,22 +96,22 @@ export default function App() {
 
   const startAlarm = useCallback(async () => {
     try {
+      if (isAlarmActive.current) return;
       await ToneStart();
       if (ToneContext.state !== "running") await ToneContext.resume();
-      if (!alarmRef.current) {
-        const filter = new Filter(800, "lowpass").toDestination();
-        const synth = new PolySynth().connect(filter);
-        const lfo = new LFO("2n", 400, 1600).start();
-        lfo.connect(filter.frequency);
-        const playPattern = () => {
-          const t = ToneContext.currentTime + 0.05;
-          synth.triggerAttackRelease(["A5", "E6"], "8n", t);
-          synth.triggerAttackRelease(["C6", "G5"], "8n", t + 0.4);
-        };
-        Transport.scheduleRepeat(playPattern, "1.2s", "+0.05");
-        if (Transport.state !== "started") Transport.start("+0.05");
-        alarmRef.current = { synth, filter, lfo };
-      }
+      const filter = new Filter(800, "lowpass").toDestination();
+      const synth = new PolySynth().connect(filter);
+      const lfo = new LFO("2n", 400, 1600).start();
+      lfo.connect(filter.frequency);
+      const playPattern = () => {
+        const t = ToneContext.currentTime + 0.05;
+        synth.triggerAttackRelease(["A5", "E6"], "8n", t);
+        synth.triggerAttackRelease(["C6", "G5"], "8n", t + 0.4);
+      };
+      Transport.scheduleRepeat(playPattern, "1.2s", "+0.05");
+      if (Transport.state !== "started") Transport.start("+0.05");
+      alarmRef.current = { synth, filter, lfo };
+      isAlarmActive.current = true;
     } catch {}
   }, []);
 
@@ -133,6 +125,7 @@ export default function App() {
       }
       if (Transport.state === "started") Transport.stop();
       Transport.cancel();
+      isAlarmActive.current = false;
     } catch {}
   }, []);
 
@@ -153,9 +146,7 @@ export default function App() {
       await remove(ref(db, "bookings/" + bookingId));
       delete expireLockRef.current[bookingId];
       if (expiredBooking?.id === bookingId) setExpiredBooking(null);
-    } catch (err) {
-      alert("Gagal menghapus data booking: " + (err.message || String(err)));
-    }
+    } catch {}
   };
 
   const handleExpire = useCallback(
@@ -178,20 +169,16 @@ export default function App() {
       const finishedBooking = bookings.find((b) => b.id === bookingId);
       if (finishedBooking) {
         const historyRef = push(ref(db, "history"));
-        try {
-          await set(historyRef, {
-            ...finishedBooking,
-            finishedAt: new Date().toISOString(),
-            handledBy: currentUser
-          });
-        } catch {}
+        await set(historyRef, {
+          ...finishedBooking,
+          finishedAt: new Date().toISOString(),
+          handledBy: currentUser
+        });
       }
       stopAlarm();
       try {
         await remove(ref(db, "bookings/" + bookingId));
-      } catch (err) {
-        alert("Gagal menyelesaikan sesi: " + (err.message || String(err)));
-      }
+      } catch {}
       delete expireLockRef.current[bookingId];
       setExpiredBooking(null);
     },
@@ -222,7 +209,9 @@ export default function App() {
 
   if (!currentUser) return <UserLogin onLogin={handleLogin} />;
 
-  const safeBookings = Array.isArray(bookings) ? bookings : [];
+  const safeBookings = Array.isArray(bookings)
+    ? bookings.filter((b) => !b.expired)
+    : [];
   const safeHistory = Array.isArray(history) ? history : [];
   const canViewHistory = role === ROLES.ADMIN;
   const canManageBookings = [ROLES.ADMIN, ROLES.CASHIER, ROLES.STAFF].includes(role);
@@ -236,10 +225,10 @@ export default function App() {
             <span className="font-semibold text-pink-400">{currentUser}</span>
             <button
               onClick={() => {
+                stopAlarm();
                 localStorage.removeItem("currentUser");
                 setCurrentUser("");
                 setRole(null);
-                setDataLoaded(false);
               }}
               className="text-xs text-red-400 hover:text-red-500 ml-2"
             >
@@ -259,7 +248,9 @@ export default function App() {
         </aside>
         <main className="relative w-full md:w-2/3 lg:w-3/4 h-screen overflow-y-auto bg-gray-800/50 transition-all duration-300 ease-in-out">
           <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-3 bg-gray-800/70 backdrop-blur-md border-b border-gray-700">
-            <h2 className="text-lg font-semibold tracking-wide text-white">{showHistory ? "📊 Laporan Harian" : "🎤 Pemesanan Aktif"}</h2>
+            <h2 className="text-lg font-semibold tracking-wide text-white">
+              {showHistory ? "📊 Laporan Harian" : "🎤 Pemesanan Aktif"}
+            </h2>
             <div className="flex items-center gap-3">
               {showHistory ? (
                 <button
@@ -286,11 +277,16 @@ export default function App() {
             {showHistory && canViewHistory ? (
               <HistoryReportDashboard history={safeHistory} />
             ) : (
-              <BookingGrid bookings={safeBookings} now={now} onExpire={(b) => handleExpire(b)} onCancelBooking={(id) => id && removeBooking(id)} />
+              <BookingGrid
+                bookings={safeBookings}
+                now={now}
+                onExpire={(b) => handleExpire(b)}
+                onCancelBooking={(id) => id && removeBooking(id)}
+              />
             )}
           </div>
         </main>
-        {expiredBooking && dataLoaded && (
+        {expiredBooking && (
           <ExpiredModal
             key={expiredBooking.id}
             booking={expiredBooking}
