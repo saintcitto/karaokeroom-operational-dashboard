@@ -4,157 +4,146 @@ import { db } from "../firebaseConfig";
 
 export default function SidebarForm({ kasir = "Tidak Diketahui", activeBookings = [] }) {
   const [room, setRoom] = useState("");
-  const [hourInput, setHourInput] = useState("");
-  const [minuteInput, setMinuteInput] = useState("");
+  const [hours, setHours] = useState("");
+  const [minutes, setMinutes] = useState("");
   const [people, setPeople] = useState("");
-  const [now, setNow] = useState(new Date());
   const [saving, setSaving] = useState(false);
+  const [timeNow, setTimeNow] = useState(new Date());
 
   useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(t);
+    const interval = setInterval(() => setTimeNow(new Date()), 1000);
+    return () => clearInterval(interval);
   }, []);
 
-  const allRooms = [
-    "KTV 1",
-    "KTV 2",
-    "KTV 3",
-    "KTV 4",
-    "KTV 5",
-    "KTV 8",
-    "KTV 9",
-    "KTV 10",
-    "KTV 11",
-    "KTV 12",
-  ];
-
+  const allRooms = ["KTV 1", "KTV 2", "KTV 3", "KTV 4", "KTV 5", "KTV 8", "KTV 9", "KTV 10", "KTV 11", "KTV 12"];
   const usedRooms = Array.isArray(activeBookings) ? activeBookings.map((b) => b.room) : [];
 
-  const formatTime = (d) => d.toTimeString().slice(0, 5);
+  const handleNowClick = () => setTimeNow(new Date());
 
-  const calculatePrice = (startDate, durationMinutes) => {
-    const hourDecimal = startDate.getHours() + startDate.getMinutes() / 60;
-    const isDay = hourDecimal >= 10 && hourDecimal < 16.75;
-    const ratePer30 = isDay ? 22500 : 30000;
-    const ratePerHour = ratePer30 * 2;
-    const fullHours = Math.floor(durationMinutes / 60);
-    const extraMinutes = durationMinutes % 60;
-    const extraCharge = extraMinutes > 0 ? Math.ceil(extraMinutes / 30) * ratePer30 : 0;
-    return fullHours * ratePerHour + extraCharge;
-  };
-
-  const handleNowClick = () => setNow(new Date());
-
-  const handleSubmit = async () => {
-    if (!room || (!hourInput && !minuteInput) || !people) return;
+  const handleAdd = async () => {
+    if (!room || (!hours && !minutes) || !people) return;
     if (usedRooms.includes(room)) return;
 
     setSaving(true);
 
-    const duration = Number(hourInput || 0) * 60 + Number(minuteInput || 0);
+    const duration = parseInt(hours || 0) * 60 + parseInt(minutes || 0);
     let bonus = 0;
-    if (Number(hourInput) === 2 && Number(minuteInput) === 0) bonus = 30;
-    if (Number(hourInput) === 3 && Number(minuteInput) === 0) bonus = 60;
+    if (parseInt(hours) === 2 && !parseInt(minutes)) bonus = 30;
+    if (parseInt(hours) === 3 && !parseInt(minutes)) bonus = 60;
 
     const totalDuration = duration + bonus;
-    const end = new Date(now.getTime() + totalDuration * 60000);
-    const price = calculatePrice(now, duration);
+    const startTime = new Date(timeNow);
+    const endTime = new Date(startTime.getTime() + totalDuration * 60000);
 
-    const payload = {
+    const hourDec = startTime.getHours() + startTime.getMinutes() / 60;
+    const isDay = hourDec >= 10 && hourDec < 16.75;
+    const ratePer30 = isDay ? 22500 : 30000;
+    const ratePerHour = ratePer30 * 2;
+    const fullHours = Math.floor(duration / 60);
+    const extraMinutes = duration % 60;
+    const extraCharge = extraMinutes > 0 ? (extraMinutes / 30) * ratePer30 : 0;
+    const totalPrice = fullHours * ratePerHour + extraCharge;
+
+    await push(ref(db, "bookings"), {
       room,
-      startTime: now.toISOString(),
-      endTime: end.toISOString(),
-      durationRequestedMinutes: duration,
+      startTime: startTime.toISOString(),
+      endTime: endTime.toISOString(),
+      durationMinutes: duration,
       bonusMinutes: bonus,
       durationTotalMinutes: totalDuration,
-      people: Number(people),
+      people: parseInt(people),
       cashier: kasir,
-      totalPrice: Number(price),
-      pricePer30Min: Number(price) ? undefined : undefined,
+      totalPrice,
       status: "active",
       createdAt: serverTimestamp(),
-    };
+    });
 
-    await push(ref(db, "bookings"), payload);
     setRoom("");
-    setHourInput("");
-    setMinuteInput("");
+    setHours("");
+    setMinutes("");
     setPeople("");
     setSaving(false);
   };
 
   return (
-    <aside className="w-full md:w-80 bg-[#0b0f14] rounded-3xl p-6 shadow-2xl sticky top-6">
-      <div className="text-pink-400 text-sm font-semibold mb-2">Login sebagai: {kasir}</div>
-      <h3 className="text-2xl font-extrabold text-white mb-4">Buat Pemesanan Baru</h3>
+    <div className="bg-[#0F1117] rounded-3xl p-6 shadow-xl text-white flex flex-col gap-4 transition-all duration-500">
+      <h2 className="text-2xl font-semibold mb-2">Buat Pemesanan</h2>
 
-      <label className="block text-sm text-gray-300 mb-2">Pilih Ruangan</label>
-      <select
-        className="w-full bg-[#0f1720] text-white p-3 rounded-xl border border-gray-800 mb-4"
-        value={room}
-        onChange={(e) => setRoom(e.target.value)}
-      >
-        <option value="">-- Pilih Ruangan --</option>
-        {allRooms.map((r) => (
-          <option key={r} value={r} disabled={usedRooms.includes(r)}>
-            {usedRooms.includes(r) ? `${r} (Terpakai)` : r}
-          </option>
-        ))}
-      </select>
-
-      <label className="block text-sm text-gray-300 mb-2">Jam Masuk</label>
-      <div className="flex gap-3 mb-4">
-        <input
-          className="flex-1 p-3 bg-[#0f1720] rounded-xl border border-gray-800 text-gray-300"
-          value={formatTime(now)}
-          readOnly
-        />
-        <button onClick={handleNowClick} className="px-4 py-2 rounded-xl bg-blue-600 text-white font-semibold">
-          Sekarang
-        </button>
+      <div>
+        <label className="block text-sm text-gray-400 mb-1">Pilih Ruangan</label>
+        <select
+          value={room}
+          onChange={(e) => setRoom(e.target.value)}
+          className="w-full bg-gray-900 border border-gray-800 text-white rounded-xl p-3 focus:ring-2 focus:ring-pink-500 outline-none"
+        >
+          <option value="">-- Pilih Ruangan --</option>
+          {allRooms.map((r) => (
+            <option key={r} value={r} disabled={usedRooms.includes(r)}>
+              {usedRooms.includes(r) ? `${r} (Terpakai)` : r}
+            </option>
+          ))}
+        </select>
       </div>
 
-      <label className="block text-sm text-gray-300 mb-2">Durasi</label>
-      <div className="flex gap-3 mb-4">
-        <input
-          type="number"
-          placeholder="Jam"
-          className="w-1/2 p-3 bg-[#0f1720] rounded-xl border border-gray-800 text-gray-300"
-          value={hourInput}
-          onChange={(e) => setHourInput(e.target.value.replace(/\D/, ""))}
-        />
-        <input
-          type="number"
-          placeholder="Menit"
-          className="w-1/2 p-3 bg-[#0f1720] rounded-xl border border-gray-800 text-gray-300"
-          value={minuteInput}
-          onChange={(e) => setMinuteInput(e.target.value.replace(/\D/, ""))}
-        />
+      <div>
+        <label className="block text-sm text-gray-400 mb-1">Jam Masuk</label>
+        <div className="flex gap-2">
+          <input
+            readOnly
+            value={timeNow.toTimeString().slice(0, 5)}
+            className="flex-1 bg-gray-900 border border-gray-800 text-gray-300 rounded-xl p-3"
+          />
+          <button
+            onClick={handleNowClick}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-sm font-semibold rounded-xl transition-all"
+          >
+            Sekarang
+          </button>
+        </div>
       </div>
 
-      <label className="block text-sm text-gray-300 mb-2">Jumlah Orang</label>
-      <input
-        type="number"
-        placeholder="Masukkan jumlah tamu"
-        className="w-full p-3 bg-[#0f1720] rounded-xl border border-gray-800 text-gray-300 mb-4"
-        value={people}
-        onChange={(e) => setPeople(e.target.value.replace(/\D/, ""))}
-      />
+      <div>
+        <label className="block text-sm text-gray-400 mb-1">Durasi</label>
+        <div className="flex gap-2">
+          <input
+            type="number"
+            placeholder="Jam"
+            value={hours}
+            onChange={(e) => setHours(e.target.value)}
+            className="flex-1 bg-gray-900 border border-gray-800 rounded-xl p-3 text-gray-300"
+          />
+          <input
+            type="number"
+            placeholder="Menit"
+            value={minutes}
+            onChange={(e) => setMinutes(e.target.value)}
+            className="flex-1 bg-gray-900 border border-gray-800 rounded-xl p-3 text-gray-300"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-sm text-gray-400 mb-1">Jumlah Orang</label>
+        <input
+          type="number"
+          placeholder="Masukkan jumlah tamu"
+          value={people}
+          onChange={(e) => setPeople(e.target.value)}
+          className="w-full bg-gray-900 border border-gray-800 rounded-xl p-3 text-gray-300"
+        />
+      </div>
 
       <button
-        onClick={handleSubmit}
-        disabled={saving || !room || (!hourInput && !minuteInput) || !people || usedRooms.includes(room)}
-        className={`w-full py-3 rounded-2xl font-bold transition ${
-          saving || usedRooms.includes(room) ? "bg-gray-700 text-gray-300" : "bg-green-600 hover:bg-green-700 text-white"
+        disabled={saving || !room || (!hours && !minutes) || !people || usedRooms.includes(room)}
+        onClick={handleAdd}
+        className={`mt-2 py-3 font-semibold rounded-2xl transition-all ${
+          saving || usedRooms.includes(room)
+            ? "bg-gray-700 text-gray-400 cursor-not-allowed"
+            : "bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-600/30"
         }`}
       >
         {saving ? "Menyimpan..." : "+ Tambah Pemesanan"}
       </button>
-
-      <div className="mt-6 text-xs text-gray-400 leading-relaxed">
-        <div className="mb-2">Siang (10.00–16.44): Rp22.500 / 30 menit</div>
-        <div>Malam (16.45–00.00): Rp30.000 / 30 menit</div>
-      </div>
-    </aside>
+    </div>
   );
 }
