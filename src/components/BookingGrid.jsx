@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ref, onValue, off } from "firebase/database";
+import { ref, onValue, off, update } from "firebase/database";
 import { db } from "../firebaseConfig";
 import BookingCard from "./BookingCard";
 import BookingGridHeader from "./BookingGridHeader";
@@ -15,12 +15,19 @@ export default function BookingGrid() {
       const val = snap.val() || {};
       const list = Object.entries(val)
         .map(([id, v]) => ({ id, ...v }))
-        .filter(Boolean)
-        .sort(
-          (a, b) =>
-            new Date(a.createdAt || 0).getTime() -
-            new Date(b.createdAt || 0).getTime()
-        );
+        .filter(Boolean);
+
+      const now = Date.now();
+      const updates = {};
+
+      // Otomatis update status expired
+      list.forEach((b) => {
+        if (b.endTime && new Date(b.endTime).getTime() <= now && b.status !== "expired") {
+          updates[`bookings/${b.id}/status`] = "expired";
+        }
+      });
+      if (Object.keys(updates).length > 0) update(ref(db), updates);
+
       setBookings(list);
     };
 
@@ -32,15 +39,13 @@ export default function BookingGrid() {
 
   const filtered = bookings.filter((b) => {
     if (!b.startTime || !b.endTime) return false;
-    const start = new Date(b.startTime).getTime();
     const end = new Date(b.endTime).getTime();
 
-    // Filter rules
     switch (filter) {
       case "active":
         return b.status === "active" && end > now;
       case "ending":
-        return b.status === "active" && end > now && end - now <= 15 * 60 * 1000;
+        return b.status === "active" && end - now <= 15 * 60 * 1000 && end > now;
       case "expired":
         return b.status === "expired" || end <= now;
       default:
