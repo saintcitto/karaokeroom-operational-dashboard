@@ -1,77 +1,31 @@
-import React, { useEffect, useState } from "react";
-import { ref, onValue, off, update } from "firebase/database";
-import { db } from "../firebaseConfig";
-import BookingCard from "./BookingCard";
-import BookingGridHeader from "./BookingGridHeader";
+import React from 'react';
+import BookingCard from './BookingCard';
 
-export default function BookingGrid() {
-  const [bookings, setBookings] = useState([]);
-  const [filter, setFilter] = useState("active");
-
-  useEffect(() => {
-    const dataRef = ref(db, "bookings");
-
-    const handleValue = (snap) => {
-      const val = snap.val() || {};
-      const list = Object.entries(val)
-        .map(([id, v]) => ({ id, ...v }))
-        .filter(Boolean);
-
-      const now = Date.now();
-      const updates = {};
-
-      // Otomatis update status expired
-      list.forEach((b) => {
-        if (b.endTime && new Date(b.endTime).getTime() <= now && b.status !== "expired") {
-          updates[`bookings/${b.id}/status`] = "expired";
-        }
-      });
-      if (Object.keys(updates).length > 0) update(ref(db), updates);
-
-      setBookings(list);
-    };
-
-    onValue(dataRef, handleValue);
-    return () => off(dataRef, "value", handleValue);
-  }, []);
-
-  const now = Date.now();
-
-  const filtered = bookings.filter((b) => {
-    if (!b.startTime || !b.endTime) return false;
-    const end = new Date(b.endTime).getTime();
-
-    switch (filter) {
-      case "active":
-        return b.status === "active" && end > now;
-      case "ending":
-        return b.status === "active" && end - now <= 15 * 60 * 1000 && end > now;
-      case "expired":
-        return b.status === "expired" || end <= now;
-      default:
-        return false;
-    }
+export default function BookingGrid({ bookings = [], onCancel = () => {}, filter = 'active', pricing, promotions }) {
+  const list = Array.isArray(bookings) ? bookings : [];
+  const filtered = list.filter(b => {
+    if (!b) return false;
+    const now = new Date();
+    const end = b.end ? new Date(b.end) : null;
+    if (filter === 'expired') return end && end.getTime() <= now.getTime();
+    if (filter === 'ending') return end && (end.getTime() - now.getTime()) <= (30*60*1000) && end.getTime() > now.getTime();
+    return end && end.getTime() > now.getTime();
   });
 
+  if (filtered.length === 0) {
+    return (
+      <div className="flex-1 p-6">
+        <h3 className="text-2xl font-semibold mb-4">Pemesanan Aktif</h3>
+        <div className="text-center text-gray-500 mt-20">Belum ada pemesanan aktif.</div>
+      </div>
+    );
+  }
+
   return (
-    <section className="flex-1 p-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold flex items-center gap-3">
-          🎤 Pemesanan Aktif
-        </h1>
-      </div>
-
-      <BookingGridHeader activeFilter={filter} onChange={setFilter} />
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {filtered.length > 0 ? (
-          filtered.map((b) => <BookingCard key={b.id} booking={b} />)
-        ) : (
-          <div className="col-span-full text-center text-gray-400 py-16 rounded-lg bg-transparent">
-            Belum ada pemesanan aktif.
-          </div>
-        )}
-      </div>
-    </section>
+    <div className="flex-1 p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6">
+      {filtered.map(b => (
+        <BookingCard key={b.id} booking={b} onCancel={onCancel} pricing={pricing} promotions={promotions} />
+      ))}
+    </div>
   );
 }
