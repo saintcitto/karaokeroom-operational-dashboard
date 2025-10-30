@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { ref, push, serverTimestamp } from "firebase/database";
-import { db } from "../firebase";
+import { db } from "../firebaseConfig";
 
 export default function SidebarForm({ kasir }) {
   const [room, setRoom] = useState("");
