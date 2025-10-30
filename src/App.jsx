@@ -29,7 +29,7 @@ const USER_ROLES = {
 export default function App() {
   const [bookings, setBookings] = useState([]);
   const [now, setNow] = useState(new Date());
-  const [expiredBooking, setExpiredBooking] = useState(null);
+  const [expiredBookings, setExpiredBookings] = useState([]);  
   const [formPrefill, setFormPrefill] = useState(null);
   const [currentUser, setCurrentUser] = useState(() => localStorage.getItem("currentUser") || "");
   const [role, setRole] = useState(() => USER_ROLES[localStorage.getItem("currentUser")] || null);
@@ -322,14 +322,14 @@ export default function App() {
             )}
           </div>
         </main>
-
+        
         {expiredBookings.map((b) => (
-      
       <ExpiredModal
         key={b.id}
         booking={b}
         onComplete={(id) => handleCompleteSession(id)}
         onExtend={(bk) => handleExtendSession(bk)}
+        onClose={() => setExpiredBookings((prev) => prev.filter((x) => x.id !== b.id))}
         />
     ))}
         )}
