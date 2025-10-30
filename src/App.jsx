@@ -11,14 +11,19 @@ import { db, ref, set, onValue, remove, update, push } from "./firebaseConfig";
 import { auth } from "./firebaseConfig";
 import { onAuthStateChanged } from "firebase/auth";
 
-const ROLES = { ADMIN: "admin", CASHIER: "cashier", STAFF: "staff" };
+const ROLES = {
+  ADMIN: "admin",
+  CASHIER: "cashier",
+  STAFF: "staff",
+};
+
 const USER_ROLES = {
   "Baya Ganteng": ROLES.ADMIN,
   Ayu: ROLES.CASHIER,
   Ridho: ROLES.CASHIER,
   Umi: ROLES.CASHIER,
   Faisal: ROLES.STAFF,
-  Zahlul: ROLES.STAFF
+  Zahlul: ROLES.STAFF,
 };
 
 export default function App() {
@@ -26,13 +31,12 @@ export default function App() {
   const [now, setNow] = useState(new Date());
   const [expiredBooking, setExpiredBooking] = useState(null);
   const [formPrefill, setFormPrefill] = useState(null);
-  const [currentUser, setCurrentUser] = useState(localStorage.getItem("currentUser") || "");
-  const [role, setRole] = useState(USER_ROLES[localStorage.getItem("currentUser")] || null);
+  const [currentUser, setCurrentUser] = useState(() => localStorage.getItem("currentUser") || "");
+  const [role, setRole] = useState(() => USER_ROLES[localStorage.getItem("currentUser")] || null);
   const [history, setHistory] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
   const alarmRef = useRef(null);
   const expireLockRef = useRef({});
-  const isAlarmActive = useRef(false);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -42,20 +46,31 @@ export default function App() {
 
   useEffect(() => {
     const bookingsRef = ref(db, "bookings");
-    const unsubscribe = onValue(bookingsRef, (snapshot) => {
-      const data = snapshot.val();
-      if (!data) return setBookings([]);
-      const parsed = Object.entries(data)
-        .map(([id, v]) => ({
-          id,
-          ...v,
-          startTime: v.startTime ? new Date(v.startTime) : null,
-          endTime: v.endTime ? new Date(v.endTime) : null
-        }))
-        .filter((b) => b.startTime && b.endTime);
-      setBookings(parsed);
-    });
-    return () => unsubscribe();
+    const unsub = onValue(
+      bookingsRef,
+      (snapshot) => {
+        const data = snapshot.val();
+        if (!data) {
+          setBookings([]);
+          return;
+        }
+        const parsed = Object.entries(data)
+          .map(([id, v]) => {
+            const st = v.startTime ? new Date(v.startTime) : null;
+            const et = v.endTime ? new Date(v.endTime) : null;
+            return {
+              id,
+              ...v,
+              startTime: st,
+              endTime: et,
+            };
+          })
+          .filter((b) => b.startTime instanceof Date && !isNaN(b.startTime) && b.endTime instanceof Date && !isNaN(b.endTime));
+        setBookings(parsed);
+      },
+      () => setBookings([])
+    );
+    return () => unsub();
   }, []);
 
   useEffect(() => {
@@ -84,10 +99,14 @@ export default function App() {
     }
   }, [bookings, now]);
 
+  useEffect(() => {
+    expireLockRef.current = {};
+  }, [currentUser]);
+
   const handleLogin = async (user) => {
     try {
       await ToneStart();
-      await ToneContext.resume();
+      if (ToneContext.state !== "running") await ToneContext.resume();
     } catch {}
     localStorage.setItem("currentUser", user);
     setCurrentUser(user);
@@ -96,37 +115,42 @@ export default function App() {
 
   const startAlarm = useCallback(async () => {
     try {
-      if (isAlarmActive.current) return;
       await ToneStart();
       if (ToneContext.state !== "running") await ToneContext.resume();
-      const filter = new Filter(800, "lowpass").toDestination();
-      const synth = new PolySynth().connect(filter);
-      const lfo = new LFO("2n", 400, 1600).start();
-      lfo.connect(filter.frequency);
-      const playPattern = () => {
-        const t = ToneContext.currentTime + 0.05;
-        synth.triggerAttackRelease(["A5", "E6"], "8n", t);
-        synth.triggerAttackRelease(["C6", "G5"], "8n", t + 0.4);
-      };
-      Transport.scheduleRepeat(playPattern, "1.2s", "+0.05");
-      if (Transport.state !== "started") Transport.start("+0.05");
-      alarmRef.current = { synth, filter, lfo };
-      isAlarmActive.current = true;
-    } catch {}
+      if (!alarmRef.current) {
+        const filter = new Filter(800, "lowpass").toDestination();
+        const synth = new PolySynth().connect(filter);
+        const lfo = new LFO("2n", 400, 1600).start();
+        lfo.connect(filter.frequency);
+        const playPattern = () => {
+          const t = ToneContext.currentTime + 0.05;
+          synth.triggerAttackRelease(["A5", "E6"], "8n", t);
+          synth.triggerAttackRelease(["C6", "G5"], "8n", t + 0.4);
+        };
+        Transport.scheduleRepeat(playPattern, "1.2s", "+0.1");
+        if (Transport.state !== "started") {
+          Transport.start("+0.1");
+        }
+        alarmRef.current = { synth, filter, lfo };
+      }
+    } catch (err) {
+      console.error("Alarm start error:", err);
+    }
   }, []);
 
   const stopAlarm = useCallback(() => {
     try {
       if (alarmRef.current) {
-        alarmRef.current.lfo.stop();
-        alarmRef.current.synth.dispose();
-        alarmRef.current.filter.dispose();
+        try { alarmRef.current.lfo.stop(); } catch {}
+        try { alarmRef.current.synth.dispose(); } catch {}
+        try { alarmRef.current.filter.dispose(); } catch {}
         alarmRef.current = null;
       }
       if (Transport.state === "started") Transport.stop();
       Transport.cancel();
-      isAlarmActive.current = false;
-    } catch {}
+    } catch (err) {
+      console.error("Alarm stop error:", err);
+    }
   }, []);
 
   const addBooking = (newBooking) => {
@@ -134,9 +158,8 @@ export default function App() {
     const path = ref(db, "bookings/" + newBooking.id);
     set(path, {
       ...newBooking,
-      startTime: newBooking.startTime.toISOString(),
-      endTime: newBooking.endTime.toISOString(),
-      expired: false
+      startTime: newBooking.startTime instanceof Date ? newBooking.startTime.toISOString() : newBooking.startTime,
+      endTime: newBooking.endTime instanceof Date ? newBooking.endTime.toISOString() : newBooking.endTime,
     });
   };
 
@@ -146,18 +169,22 @@ export default function App() {
       await remove(ref(db, "bookings/" + bookingId));
       delete expireLockRef.current[bookingId];
       if (expiredBooking?.id === bookingId) setExpiredBooking(null);
-    } catch {}
+    } catch (err) {
+      console.error("Failed to remove booking:", err);
+      alert("Gagal menghapus data booking: " + (err.message || err));
+    }
   };
 
   const handleExpire = useCallback(
     (booking) => {
       if (!booking?.id) return;
       update(ref(db, "bookings/" + booking.id), { expired: true })
-        .then(() => {
+        .then(async () => {
           setExpiredBooking({ ...booking, expired: true });
-          startAlarm();
+          await startAlarm();
         })
-        .catch(() => {
+        .catch((err) => {
+          console.error("Failed to mark expired:", err);
           expireLockRef.current[booking.id] = false;
         });
     },
@@ -166,21 +193,26 @@ export default function App() {
 
   const handleCompleteSession = useCallback(
     async (bookingId) => {
+      if (!bookingId) return;
       const finishedBooking = bookings.find((b) => b.id === bookingId);
-      if (finishedBooking) {
-        const historyRef = push(ref(db, "history"));
-        await set(historyRef, {
-          ...finishedBooking,
-          finishedAt: new Date().toISOString(),
-          handledBy: currentUser
-        });
-      }
-      stopAlarm();
       try {
+        if (finishedBooking) {
+          const historyRef = push(ref(db, "history"));
+          await set(historyRef, {
+            ...finishedBooking,
+            finishedAt: new Date().toISOString(),
+            handledBy: currentUser || "unknown",
+          });
+        }
+        stopAlarm();
         await remove(ref(db, "bookings/" + bookingId));
-      } catch {}
-      delete expireLockRef.current[bookingId];
-      setExpiredBooking(null);
+      } catch (err) {
+        console.error("Error completing session:", err);
+        alert("Gagal menyelesaikan sesi: " + (err.message || err));
+      } finally {
+        delete expireLockRef.current[bookingId];
+        setExpiredBooking(null);
+      }
     },
     [bookings, currentUser, stopAlarm]
   );
@@ -192,9 +224,9 @@ export default function App() {
       setExpiredBooking(null);
       setFormPrefill({
         room: booking.room,
-        startTime: formatTimeForInput(booking.endTime)
+        startTime: formatTimeForInput(booking.endTime),
       });
-      remove(ref(db, "bookings/" + booking.id));
+      removeBooking(booking.id);
       delete expireLockRef.current[booking.id];
     },
     [stopAlarm]
@@ -202,16 +234,18 @@ export default function App() {
 
   useEffect(() => {
     if (currentUser === "Baya Ganteng") {
-      const unsubscribe = onAuthStateChanged(auth, () => {});
+      const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+        if (!firebaseUser) {
+          console.warn("Admin not authenticated in Firebase Auth");
+        }
+      });
       return () => unsubscribe();
     }
   }, [currentUser]);
 
   if (!currentUser) return <UserLogin onLogin={handleLogin} />;
 
-  const safeBookings = Array.isArray(bookings)
-    ? bookings.filter((b) => !b.expired)
-    : [];
+  const safeBookings = Array.isArray(bookings) ? bookings : [];
   const safeHistory = Array.isArray(history) ? history : [];
   const canViewHistory = role === ROLES.ADMIN;
   const canManageBookings = [ROLES.ADMIN, ROLES.CASHIER, ROLES.STAFF].includes(role);
@@ -225,10 +259,10 @@ export default function App() {
             <span className="font-semibold text-pink-400">{currentUser}</span>
             <button
               onClick={() => {
-                stopAlarm();
                 localStorage.removeItem("currentUser");
                 setCurrentUser("");
                 setRole(null);
+                stopAlarm();
               }}
               className="text-xs text-red-400 hover:text-red-500 ml-2"
             >
@@ -246,6 +280,7 @@ export default function App() {
             />
           )}
         </aside>
+
         <main className="relative w-full md:w-2/3 lg:w-3/4 h-screen overflow-y-auto bg-gray-800/50 transition-all duration-300 ease-in-out">
           <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-3 bg-gray-800/70 backdrop-blur-md border-b border-gray-700">
             <h2 className="text-lg font-semibold tracking-wide text-white">
@@ -259,23 +294,24 @@ export default function App() {
                     setFormPrefill(null);
                     setExpiredBooking(null);
                   }}
-                  className="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white rounded-lg text-sm font-medium shadow-md hover:shadow-lg transition-all duration-300"
+                  className="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-500 text-white rounded-lg text-sm font-medium shadow-md transition-all"
                 >
                   ← Kembali ke Pemesanan
                 </button>
               ) : canViewHistory ? (
                 <button
                   onClick={() => setShowHistory(true)}
-                  className="px-4 py-2 bg-gradient-to-r from-fuchsia-500 to-pink-600 hover:from-fuchsia-600 hover:to-pink-700 text-white rounded-lg text-sm font-medium shadow-md hover:shadow-lg transition-all duration-300"
+                  className="px-4 py-2 bg-gradient-to-r from-fuchsia-500 to-pink-600 text-white rounded-lg text-sm font-medium shadow-md transition-all"
                 >
                   📈 Lihat Laporan Harian
                 </button>
               ) : null}
             </div>
           </div>
+
           <div className="transition-all duration-500 ease-in-out p-6">
             {showHistory && canViewHistory ? (
-              <HistoryReportDashboard history={safeHistory} />
+              <HistoryReportDashboard history={safeHistory} onClose={() => setShowHistory(false)} />
             ) : (
               <BookingGrid
                 bookings={safeBookings}
@@ -286,12 +322,17 @@ export default function App() {
             )}
           </div>
         </main>
+
         {expiredBooking && (
           <ExpiredModal
             key={expiredBooking.id}
             booking={expiredBooking}
             onComplete={(id) => handleCompleteSession(id)}
             onExtend={(b) => handleExtendSession(b)}
+            onClose={() => {
+              stopAlarm();
+              setExpiredBooking(null);
+            }}
           />
         )}
       </div>
