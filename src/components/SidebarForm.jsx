@@ -69,7 +69,6 @@ export default function SidebarForm({ kasir }) {
 
   return (
     <div className="w-full bg-gray-900 p-5 rounded-2xl text-white shadow-2xl backdrop-blur-md">
-      <p className="text-pink-400 font-bold mb-2">Login sebagai: {kasir}</p>
       <h2 className="text-xl font-semibold mb-5">Buat Pemesanan Baru</h2>
 
       <label className="block text-sm mb-1">Pilih Ruangan</label>
