@@ -84,7 +84,7 @@ export default function SidebarForm({ kasir = "Tidak Diketahui" }) {
   const rooms = ["KTV 1", "KTV 2", "KTV 3", "KTV 4", "KTV 5", "KTV 8", "KTV 9", "KTV 10", "KTV 11", "KTV 12"];
 
   return (
-    <aside className="w-full md:w-80 lg:w-72 h-screen flex flex-col justify-between bg-gray-900 p-6 rounded-2xl text-white shadow-xl fixed right-0 top-0 md:static md:rounded-none md:shadow-none">
+    <aside className="w-full md:w-80 lg:w-72 h-screen flex flex-col justify-center bg-gray-900 p-6 text-white shadow-xl fixed left-0 top-0 md:static md:rounded-none md:shadow-none transition-all duration-300">
       <div>
         <h2 className="text-2xl font-bold mb-4">Buat Pemesanan Baru</h2>
 
