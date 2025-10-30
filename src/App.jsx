@@ -34,25 +34,58 @@ const USER_ROLES = {
 };
 
 export default function App() {
+  const [initialized, setInitialized] = useState(false);
   const [bookings, setBookings] = useState([]);
   const [now, setNow] = useState(new Date());
   const [expiredBooking, setExpiredBooking] = useState(null);
   const [formPrefill, setFormPrefill] = useState(null);
-  const [currentUser, setCurrentUser] = useState(localStorage.getItem("currentUser") || "");
-  const [role, setRole] = useState(USER_ROLES[localStorage.getItem("currentUser")] || null);
+  const [currentUser, setCurrentUser] = useState("");
+  const [role, setRole] = useState(null);
   const [history, setHistory] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
   const alarmRef = useRef(null);
   const expireLockRef = useRef({});
 
-  // Auto update time
+  // ✅ Load user dari localStorage
+  useEffect(() => {
+    const savedUser = localStorage.getItem("currentUser");
+    if (savedUser && savedUser !== "undefined" && savedUser !== "null") {
+      setCurrentUser(savedUser);
+      setRole(USER_ROLES[savedUser] || null);
+    }
+    setInitialized(true);
+  }, []);
+
+  // ⏳ Loading sebelum localStorage terbaca
+  if (!initialized)
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-900 text-white">
+        <p className="animate-pulse text-gray-400">
+          Loading Karaoke Sonia Dashboard...
+        </p>
+      </div>
+    );
+
+  // 🧠 Jika belum login
+  if (!currentUser)
+    return (
+      <UserLogin
+        onLogin={(u) => {
+          localStorage.setItem("currentUser", u.name);
+          setCurrentUser(u.name);
+          setRole(USER_ROLES[u.name] || null);
+        }}
+      />
+    );
+
+  // ⏰ Update waktu realtime
   useEffect(() => {
     if (!currentUser) return;
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
   }, [currentUser]);
 
-  // Fetch bookings
+  // 🔥 Ambil bookings dari Firebase
   useEffect(() => {
     const bookingsRef = ref(db, "bookings");
     const unsubscribe = onValue(
@@ -75,7 +108,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Fetch history for admin
+  // 🧾 History hanya untuk admin
   useEffect(() => {
     if (role !== ROLES.ADMIN) return;
     const historyRef = ref(db, "history");
@@ -87,7 +120,7 @@ export default function App() {
     return () => unsub();
   }, [role]);
 
-  // Detect expired booking
+  // ⏳ Deteksi booking yang sudah expired
   useEffect(() => {
     if (!bookings.length) return;
     const expiredNow = bookings.find(
@@ -107,24 +140,7 @@ export default function App() {
     expireLockRef.current = {};
   }, [currentUser]);
 
-  const handleLogin = async (user) => {
-    try {
-      await ToneStart();
-      await ToneContext.resume();
-    } catch (err) {
-      console.warn("⚠️ Tone.js context resume failed:", err);
-    }
-    localStorage.setItem("currentUser", user.name);
-    setCurrentUser(user.name);
-    setRole(USER_ROLES[user.name] || null);
-  };
-
-  useEffect(() => {
-    if (currentUser) {
-      setRole(USER_ROLES[currentUser] || null);
-    }
-  }, [currentUser]);
-
+  // ✅ Fungsi Alarm
   const startAlarm = useCallback(async () => {
     try {
       await ToneStart();
@@ -163,6 +179,7 @@ export default function App() {
     }
   }, []);
 
+  // ✅ CRUD Booking
   const addBooking = (newBooking) => {
     if (!newBooking?.id) return;
     const path = ref(db, "bookings/" + newBooking.id);
@@ -237,7 +254,7 @@ export default function App() {
     [stopAlarm]
   );
 
-  // Admin auth observer
+  // 🔐 Firebase Admin Auth
   useEffect(() => {
     if (currentUser === "Baya Ganteng") {
       const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
@@ -251,9 +268,7 @@ export default function App() {
     }
   }, [currentUser]);
 
-  if (!currentUser)
-    return <UserLogin onLogin={handleLogin} footerName={"sweet cherry pie 🍰"} />;
-
+  // ✅ SAFE rendering data
   const safeBookings = Array.isArray(bookings) ? bookings : [];
   const safeHistory = Array.isArray(history) ? history : [];
   const canViewHistory = role === ROLES.ADMIN;
@@ -261,11 +276,14 @@ export default function App() {
 
   return (
     <KTVErrorBoundary>
-      <div className="flex flex-col md:flex-row h-screen bg-gray-900 text-white font-sans">
+      <div className="flex flex-col md:flex-row h-screen bg-gray-900 text-white font-sans transition-all duration-500 ease-in-out">
+        {/* Sidebar */}
         <aside className="w-full md:w-1/3 lg:w-1/4 h-auto md:h-screen bg-gray-800 shadow-lg overflow-y-auto">
           <div className="flex items-center justify-between p-4 border-b border-gray-700">
             <span className="text-sm text-gray-300">Login sebagai:</span>
-            <span className="font-semibold text-pink-400">{currentUser}</span>
+            <span className="font-semibold text-pink-400">
+              {currentUser || "Tidak Dikenal"}
+            </span>
             <button
               onClick={() => {
                 localStorage.removeItem("currentUser");
@@ -277,6 +295,7 @@ export default function App() {
               Logout
             </button>
           </div>
+
           {canManageBookings && (
             <SidebarForm
               activeRoomNames={safeBookings.map((b) => b.room)}
@@ -289,7 +308,8 @@ export default function App() {
           )}
         </aside>
 
-        <main className="relative w-full md:w-2/3 lg:w-3/4 h-screen overflow-y-auto bg-gray-800/50 transition-all duration-300 ease-in-out">
+        {/* Main Content */}
+        <main className="relative w-full md:w-2/3 lg:w-3/4 h-screen overflow-y-auto bg-gray-800/50 transition-all duration-500 ease-in-out">
           <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-3 bg-gray-800/70 backdrop-blur-md border-b border-gray-700">
             <h2 className="text-lg font-semibold tracking-wide text-white">
               {showHistory ? "📊 Laporan Harian" : "🎤 Pemesanan Aktif"}
@@ -334,6 +354,7 @@ export default function App() {
           </div>
         </main>
 
+        {/* Modal Expired */}
         {expiredBooking && (
           <ExpiredModal
             key={expiredBooking.id}
