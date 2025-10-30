@@ -1,39 +1,31 @@
 import React from "react";
-import BookingCard from "./BookingCard";
-import BookingGridHeader from "./BookingGridHeader";
 
-export default function BookingGrid({ bookings = [], activeFilter = "active", onFilterChange = () => {} }) {
-  const list = Array.isArray(bookings) ? bookings : Object.keys(bookings || {}).map((k) => ({ ...bookings[k], id: k }));
-
-  const filtered = list.filter((b) => {
-    if (activeFilter === "active") return b.status === "active";
-    if (activeFilter === "ending") {
-      const end = b.endTime ? new Date(b.endTime) : null;
-      if (!end) return false;
-      const diffMin = (end.getTime() - Date.now()) / 60000;
-      return diffMin > 0 && diffMin <= 30;
-    }
-    if (activeFilter === "expired") {
-      const end = b.endTime ? new Date(b.endTime) : null;
-      return end && end.getTime() <= Date.now();
-    }
-    return true;
-  });
+export default function BookingGridHeader({ activeFilter, onChange }) {
+  const tabs = [
+    { id: "active", label: "Total Aktif", icon: "📋" },
+    { id: "ending", label: "Akan Habis", icon: "⏳" },
+    { id: "expired", label: "Waktu Habis", icon: "⚠️" },
+  ];
 
   return (
-    <section className="flex-1 px-8 py-6">
-      <div className="mb-6">
-        <div className="text-2xl font-bold text-white flex items-center gap-3">🎤 Pemesanan Aktif</div>
-        <BookingGridHeader activeFilter={activeFilter} onChange={onFilterChange} />
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {filtered.length === 0 ? (
-          <div className="col-span-full text-gray-400">Belum ada pemesanan aktif.</div>
-        ) : (
-          filtered.map((b) => <BookingCard key={b.id || b.room} booking={b} />)
-        )}
-      </div>
-    </section>
+    <div className="flex items-center gap-3 border-b border-gray-800/60 pb-3 mt-2">
+      {tabs.map((tab) => {
+        const active = activeFilter === tab.id;
+        return (
+          <button
+            key={tab.id}
+            onClick={() => onChange(tab.id)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-sm font-medium transition-all duration-300 ${
+              active
+                ? "bg-gradient-to-r from-pink-500/30 to-purple-500/20 text-pink-400 shadow-inner"
+                : "bg-gray-800/50 text-gray-400 hover:text-gray-200 hover:bg-gray-700/40"
+            }`}
+          >
+            <span>{tab.icon}</span>
+            <span>{tab.label}</span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
