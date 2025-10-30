@@ -1,1 +1,37 @@
-
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Karaoke Sonia Dashboard</title>
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <style>
+      body {
+        margin: 0;
+        background: #0f0f1a;
+        color: white;
+        font-family: system-ui, sans-serif;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+      }
+      .loading {
+        font-size: 14px;
+        opacity: 0.7;
+        animation: blink 1.2s infinite;
+      }
+      @keyframes blink {
+        50% {
+          opacity: 0.3;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div class="loading">Loading Karaoke Sonia Dashboard...</div>
+    </div>
+    <script type="module" src="../src/main.jsx"></script>
+  </body>
+</html>
