@@ -1,40 +1,30 @@
-import React from 'react';
-import { Info } from 'lucide-react';
-import BookingGridHeader from './BookingGridHeader';
-import BookingCard from './BookingCard';
+import React, { useEffect, useState } from "react";
+import { ref, onValue } from "firebase/database";
+import { db } from "../firebaseConfig";
+import BookingCard from "./BookingCard";
 
-export default function BookingGrid({ bookings = [], now = new Date(), onExpire, onCancelBooking, stats = {} }) {
-  const safeBookings = Array.isArray(bookings) ? bookings : [];
-  const safeStats =
-    typeof stats === 'object' && stats !== null ? stats : { active: 0, warning: 0, expired: 0 };
-  const safeCancel = typeof onCancelBooking === 'function' ? onCancelBooking : () => {};
+export default function BookingGrid() {
+  const [bookings, setBookings] = useState([]);
+
+  useEffect(() => {
+    const q = ref(db, "bookings");
+    const unsub = onValue(q, (snapshot) => {
+      if (!snapshot.exists()) return setBookings([]);
+      const data = Object.entries(snapshot.val())
+        .filter(([_, b]) => b.status === "active")
+        .map(([id, b]) => ({ id, ...b }))
+        .sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+      setBookings(data);
+    });
+    return () => unsub();
+  }, []);
 
   return (
-    <div className="p-6 h-full flex flex-col">
-      <h2 className="text-2xl font-bold mb-6 text-white">Pemesanan Aktif</h2>
-      <BookingGridHeader stats={safeStats} />
-      {safeBookings.length === 0 ? (
-        <div className="flex-1 flex items-center justify-center text-gray-500">
-          <div className="text-center">
-            <Info size={48} className="mx-auto mb-2" />
-            <p>Belum ada pemesanan aktif.</p>
-          </div>
-        </div>
+    <div className="p-6 grid gap-5 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 transition-all">
+      {bookings.length > 0 ? (
+        bookings.map((b) => <BookingCard key={b.id} bookingId={b.id} booking={b} />)
       ) : (
-        <div
-          className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-y-auto pr-1"
-          style={{ scrollbarGutter: 'stable' }}
-        >
-          {safeBookings.map((booking) => (
-            <BookingCard
-              key={booking.id}
-              booking={booking}
-              now={now}
-              onExpire={onExpire}
-              onCancel={safeCancel}
-            />
-          ))}
-        </div>
+        <div className="col-span-full text-center text-gray-400 text-sm py-10">Belum ada pemesanan aktif</div>
       )}
     </div>
   );
