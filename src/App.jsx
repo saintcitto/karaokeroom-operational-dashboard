@@ -12,7 +12,6 @@ import { auth } from "./firebaseConfig";
 import { onAuthStateChanged } from "firebase/auth";
 
 const ROLES = { ADMIN: "admin", CASHIER: "cashier", STAFF: "staff" };
-
 const USER_ROLES = {
   "Baya Ganteng": ROLES.ADMIN,
   Ayu: ROLES.CASHIER,
@@ -31,6 +30,7 @@ export default function App() {
   const [role, setRole] = useState(USER_ROLES[localStorage.getItem("currentUser")] || null);
   const [history, setHistory] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [dataLoaded, setDataLoaded] = useState(false);
   const alarmRef = useRef(null);
   const expireLockRef = useRef({});
 
@@ -46,7 +46,11 @@ export default function App() {
       bookingsRef,
       (snapshot) => {
         const data = snapshot.val();
-        if (!data) return setBookings([]);
+        if (!data) {
+          setBookings([]);
+          setDataLoaded(true);
+          return;
+        }
         const parsed = Object.entries(data)
           .map(([id, v]) => ({
             id,
@@ -56,8 +60,12 @@ export default function App() {
           }))
           .filter((b) => b.startTime && b.endTime);
         setBookings(parsed);
+        setDataLoaded(true);
       },
-      () => setBookings([])
+      () => {
+        setBookings([]);
+        setDataLoaded(true);
+      }
     );
     return () => unsubscribe();
   }, []);
@@ -74,7 +82,7 @@ export default function App() {
   }, [role]);
 
   useEffect(() => {
-    if (!bookings.length) return;
+    if (!dataLoaded || !bookings.length) return;
     const expiredNow = bookings.find(
       (b) => !b.expired && b.endTime instanceof Date && b.endTime <= now && !expireLockRef.current[b.id]
     );
@@ -82,11 +90,7 @@ export default function App() {
       expireLockRef.current[expiredNow.id] = true;
       handleExpire(expiredNow);
     }
-  }, [bookings, now]);
-
-  useEffect(() => {
-    expireLockRef.current = {};
-  }, [currentUser]);
+  }, [bookings, now, dataLoaded]);
 
   const handleLogin = async (user) => {
     try {
@@ -116,15 +120,15 @@ export default function App() {
         if (Transport.state !== "started") Transport.start("+0.05");
         alarmRef.current = { synth, filter, lfo };
       }
-    } catch (err) {}
+    } catch {}
   }, []);
 
   const stopAlarm = useCallback(() => {
     try {
       if (alarmRef.current) {
-        try { alarmRef.current.lfo.stop(); } catch {}
-        try { alarmRef.current.synth.dispose(); } catch {}
-        try { alarmRef.current.filter.dispose(); } catch {}
+        alarmRef.current.lfo.stop();
+        alarmRef.current.synth.dispose();
+        alarmRef.current.filter.dispose();
         alarmRef.current = null;
       }
       if (Transport.state === "started") Transport.stop();
@@ -138,7 +142,8 @@ export default function App() {
     set(path, {
       ...newBooking,
       startTime: newBooking.startTime.toISOString(),
-      endTime: newBooking.endTime.toISOString()
+      endTime: newBooking.endTime.toISOString(),
+      expired: false
     });
   };
 
@@ -179,7 +184,7 @@ export default function App() {
             finishedAt: new Date().toISOString(),
             handledBy: currentUser
           });
-        } catch (err) {}
+        } catch {}
       }
       stopAlarm();
       try {
@@ -210,7 +215,7 @@ export default function App() {
 
   useEffect(() => {
     if (currentUser === "Baya Ganteng") {
-      const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {});
+      const unsubscribe = onAuthStateChanged(auth, () => {});
       return () => unsubscribe();
     }
   }, [currentUser]);
@@ -234,6 +239,7 @@ export default function App() {
                 localStorage.removeItem("currentUser");
                 setCurrentUser("");
                 setRole(null);
+                setDataLoaded(false);
               }}
               className="text-xs text-red-400 hover:text-red-500 ml-2"
             >
@@ -284,7 +290,14 @@ export default function App() {
             )}
           </div>
         </main>
-        {expiredBooking && <ExpiredModal key={expiredBooking.id} booking={expiredBooking} onComplete={(id) => handleCompleteSession(id)} onExtend={(b) => handleExtendSession(b)} />}
+        {expiredBooking && dataLoaded && (
+          <ExpiredModal
+            key={expiredBooking.id}
+            booking={expiredBooking}
+            onComplete={(id) => handleCompleteSession(id)}
+            onExtend={(b) => handleExtendSession(b)}
+          />
+        )}
       </div>
     </KTVErrorBoundary>
   );
