@@ -1,4 +1,4 @@
-// src/App.jsx (fragment / replace top-level)
+// src/App.jsx
 import React, { useState } from "react";
 import BookingGrid from "./components/BookingGrid";
 import BookingGridHeader from "./components/BookingGridHeader";
