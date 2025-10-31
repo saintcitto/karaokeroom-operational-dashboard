@@ -1,89 +1,95 @@
-import React, { useEffect, useState } from "react";
-import { formatCurrency } from "../utils/helpers";
+import React, { useEffect, useState, useRef } from "react";
 
-export default function BookingCard({ booking = {}, onCancel = () => {}, onExtend = () => {}, onComplete = () => {} }) {
-  const [timeLeft, setTimeLeft] = useState("");
-  const [progressPct, setProgressPct] = useState(0);
-  const expired = !!booking.expired;
-  const start = booking.startTime ? new Date(booking.startTime) : null;
-  const end = booking.endTime ? new Date(booking.endTime) : null;
-  const effectiveMinutes = Number(booking.effectiveDurationMinutes || booking.durationMinutes || 0);
+function playAlarmTone() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(880, ctx.currentTime);
+    g.gain.setValueAtTime(0.0001, ctx.currentTime);
+    o.connect(g);
+    g.connect(ctx.destination);
+    o.start();
+    g.gain.exponentialRampToValueAtTime(0.08, ctx.currentTime + 0.01);
+    setTimeout(() => {
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.12);
+      o.stop(ctx.currentTime + 0.14);
+    }, 1000);
+  } catch (e) {}
+}
+
+export default function BookingCard({ booking = {}, filter = "active", onCancel = () => {}, onExtend = () => {}, onComplete = () => {} }) {
+  const [remainingSec, setRemainingSec] = useState(0);
+  const alarmedRef = useRef(false);
 
   useEffect(() => {
-    if (!start || !end) return;
-    const tick = () => {
-      const now = new Date();
-      const totalMs = end.getTime() - start.getTime();
-      const leftMs = Math.max(0, end.getTime() - now.getTime());
-      const left = leftMs;
-      const leftH = String(Math.floor(left / 3600000)).padStart(2,'0');
-      const leftM = String(Math.floor((left % 3600000) / 60000)).padStart(2,'0');
-      const leftS = String(Math.floor((left % 60000) / 1000)).padStart(2,'0');
-      setTimeLeft(`${leftH}:${leftM}:${leftS}`);
-      const pct = totalMs > 0 ? Math.max(0, Math.min(100, ((totalMs - leftMs) / totalMs) * 100)) : 100;
-      setProgressPct(pct);
-    };
-    tick();
-    const iv = setInterval(tick, 500);
-    return () => clearInterval(iv);
-  }, [start, end]);
+    function update() {
+      if (!booking || !booking.endTime) {
+        setRemainingSec(0);
+        return;
+      }
+      const diff = Math.floor((new Date(booking.endTime).getTime() - Date.now()) / 1000);
+      setRemainingSec(Math.max(0, diff));
+    }
+    update();
+    const id = setInterval(update, 1000);
+    return () => clearInterval(id);
+  }, [booking]);
 
-  const handleExtend = () => {
-    if (!booking.id) return;
-    onExtend(booking.id);
+  useEffect(() => {
+    if (remainingSec <= 0 && !alarmedRef.current) {
+      alarmedRef.current = true;
+      playAlarmTone();
+      try {
+        window.alert(`Sesi ${booking.room} telah berakhir.`);
+      } catch (e) {}
+    }
+  }, [remainingSec, booking.room]);
+
+  const formatHms = (s) => {
+    const hh = Math.floor(s / 3600);
+    const mm = Math.floor((s % 3600) / 60);
+    const ss = s % 60;
+    if (hh > 0) return `${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}:${String(ss).padStart(2,"0")}`;
+    return `${String(mm).padStart(2,"0")}:${String(ss).padStart(2,"0")}`;
   };
 
-  const handleComplete = () => {
-    if (!booking.id) return;
-    onComplete(booking.id);
-  };
-
-  const handleCancel = () => {
-    if (!booking.id) return;
-    onCancel(booking.id);
-  };
+  const totalSec = Math.max(1, Math.round((booking.durationMinutes || 0) * 60));
+  const pct = totalSec ? Math.min(100, Math.round(((totalSec - remainingSec) / totalSec) * 100)) : 0;
+  const isExpired = booking.expired === true || remainingSec <= 0;
+  const progressColor = remainingSec <= 60 ? "bg-red-500" : "bg-green-500";
 
   return (
-    <div className="bg-gray-800 rounded-xl p-6 shadow-inner relative">
+    <div className={`bg-gray-800 rounded-xl p-6 border border-gray-700 ${isExpired ? "opacity-80" : ""}`}>
       <div className="flex justify-between items-start">
         <div>
-          <div className="text-xl font-semibold">{booking.room}</div>
-          <div className="text-sm text-gray-400 mt-2">
-            {start && end ? `${start.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit',hour12:false})} — ${end.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit',hour12:false})}` : "-"}
-          </div>
-          <div className="text-sm text-gray-400 mt-3 flex items-center gap-2">
-            <span>👥</span>
-            <span>{booking.people || 0} orang</span>
-          </div>
-          <div className="text-sm text-gray-400 mt-2">Kasir: {booking.cashier || "Tidak Diketahui"}</div>
-          {booking.priceMeta && booking.priceMeta.freeMinutes > 0 && (
-            <div className="text-sm text-green-400 mt-2">Gratis {booking.priceMeta.freeMinutes} menit</div>
-          )}
+          <div className="text-lg font-semibold">{booking.room}</div>
+          <div className="text-sm text-gray-400">{booking.startTime ? new Date(booking.startTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : ""} — {booking.endTime ? new Date(booking.endTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : ""}</div>
         </div>
-        <div className="text-sm text-gray-300">{Math.round(effectiveMinutes)} m</div>
+        <div className="text-sm text-gray-400">{booking.durationMinutes ? `${booking.durationMinutes} m` : ""}</div>
       </div>
+
+      <div className="mt-3 text-sm text-gray-400">👥 {booking.people || 1} orang</div>
+      <div className="mt-2 text-sm text-green-400">{booking.promoNote && booking.promoNote !== "-" ? booking.promoNote : ""}</div>
 
       <div className="mt-4">
-        <div className="text-sm text-gray-400 mb-2">Sisa Waktu:</div>
-        <div className="w-full bg-gray-700 rounded h-3 overflow-hidden">
-          <div style={{ width: `${progressPct}%` }} className={`h-3 rounded transition-all`} />
+        <div className="h-3 bg-gray-700 rounded-full overflow-hidden relative">
+          <div style={{ width: `${pct}%` }} className={`h-full rounded-full ${progressColor} transition-all duration-500`}></div>
+          <div style={{ left: `${pct}%` }} className={`absolute -top-3 w-3 h-3 rounded-full transform -translate-x-1/2 ${remainingSec <= 60 ? "animate-pulse bg-red-400" : "bg-green-300"}`}></div>
         </div>
-        <div className="text-green-400 font-mono text-sm mt-2 text-right">{timeLeft}</div>
+        <div className={`text-right text-xs mt-2 ${remainingSec <= 60 ? "text-red-400 animate-pulse" : "text-green-400"}`}>{formatHms(remainingSec)}</div>
       </div>
 
-      <div className="mt-4">
-        <div className="text-sm text-gray-400">Subtotal:</div>
-        <div className="text-2xl text-green-400 font-semibold">{booking.priceMeta ? formatCurrency(booking.priceMeta.total) : "Rp0"}</div>
-      </div>
+      <div className="mt-4 text-green-300 font-semibold">Subtotal: Rp{(booking.total || booking.tarif || 0).toLocaleString()}</div>
 
-      <div className="mt-4 flex items-center gap-3">
-        {!expired && (
-          <>
-            <button onClick={handleExtend} className="px-4 py-2 bg-blue-600 rounded text-white" type="button">Perpanjang</button>
-            <button onClick={handleComplete} className="px-4 py-2 bg-green-600 rounded text-white" type="button">Selesai</button>
-          </>
+      <div className="mt-4 flex gap-3">
+        {!isExpired && (
+          <button onClick={onComplete} className="bg-green-600 text-white px-4 py-2 rounded-md">Selesai</button>
         )}
-        <button onClick={handleCancel} className={`px-4 py-2 rounded text-white ${expired ? "bg-gray-600" : "bg-red-600"}`} type="button">Batalkan</button>
+        {!isExpired && (
+          <button onClick={onCancel} className="bg-red-500 text-white px-4 py-2 rounded-md">Batalkan</button>
+        )}
       </div>
     </div>
   );
