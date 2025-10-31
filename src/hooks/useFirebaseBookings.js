@@ -4,14 +4,13 @@ import { calculateTotalPriceWithPromo } from "../utils/helpers";
 import { PolySynth, Filter, LFO, Transport, start as ToneStart, context as ToneContext } from "tone";
 import useAuditTrail from "./useAuditTrail";
 
-export default function useFirebaseBookings(currentUser = "") {
+export default function useFirebaseBookings(currentUser = "Tidak Diketahui") {
   const [bookings, setBookings] = useState([]);
   const [expiredBookings, setExpiredBookings] = useState([]);
   const expireLock = useRef({});
   const alarmRef = useRef(null);
-  const { logAction } = useAuditTrail(currentUser);
+  const { logAction } = useAuditTrail(currentUser || "Tidak Diketahui");
 
-  // Realtime sync
   useEffect(() => {
     const bookingsRef = ref(db, "bookings");
     const unsub = onValue(bookingsRef, (snap) => {
@@ -27,7 +26,6 @@ export default function useFirebaseBookings(currentUser = "") {
     return () => unsub();
   }, []);
 
-  // Cek expired setiap 10 detik
   useEffect(() => {
     const interval = setInterval(() => {
       const now = new Date();
@@ -45,20 +43,17 @@ export default function useFirebaseBookings(currentUser = "") {
     try {
       await update(ref(db, "bookings/" + booking.id), { expired: true });
       setExpiredBookings((prev) => {
-        const exists = prev.find((b) => b.id === booking.id);
-        if (exists) return prev;
-        const updated = [...prev, { ...booking, expired: true }];
-        if (updated.length && !alarmRef.current) startAlarm();
-        return updated;
+        if (prev.find((b) => b.id === booking.id)) return prev;
+        return [...prev, { ...booking, expired: true }];
       });
       await logAction("EXPIRE_BOOKING", { room: booking.room });
+      startAlarm();
     } catch (err) {
       console.warn("Gagal update expired:", err.message);
       expireLock.current[booking.id] = false;
     }
   }, [logAction]);
 
-  // Tone.js alarm system
   const startAlarm = useCallback(async () => {
     try {
       await ToneStart();
@@ -97,12 +92,6 @@ export default function useFirebaseBookings(currentUser = "") {
     }
   }, []);
 
-  useEffect(() => {
-    if (expiredBookings.length > 0) startAlarm();
-    else stopAlarm();
-  }, [expiredBookings, startAlarm, stopAlarm]);
-
-  // CRUD actions
   const addBooking = useCallback(async (booking) => {
     try {
       const { total, freeMinutes, promoNote } = calculateTotalPriceWithPromo(
@@ -167,7 +156,7 @@ export default function useFirebaseBookings(currentUser = "") {
       await set(historyRef, {
         ...booking,
         finishedAt: new Date().toISOString(),
-        handledBy: currentUser,
+        handledBy: currentUser || "Tidak Diketahui",
       });
       await remove(ref(db, "bookings/" + bookingId));
       setExpiredBookings((prev) => prev.filter((b) => b.id !== bookingId));
@@ -184,5 +173,6 @@ export default function useFirebaseBookings(currentUser = "") {
     removeBooking,
     extendBooking,
     completeBooking,
+    stopAlarm,
   };
 }
