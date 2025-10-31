@@ -1,37 +1,37 @@
-// src/components/BookingGrid.jsx
-import React, { useMemo } from "react";
-import BookingCard from "./BookingCard";
+// src/components/BookingGridHeader.jsx
+import React from "react";
 
-export default function BookingGrid({ bookings = [], onCancel = () => {}, onExtend = () => {}, onComplete = () => {}, filter = "active" }) {
-  const now = useMemo(() => new Date(), [bookings]);
-
-  const list = Array.isArray(bookings) ? bookings : [];
-
-  const filtered = list.filter((b) => {
-    if (!b || !b.endTime) return false;
-    const end = new Date(b.endTime);
-    const diffMs = end.getTime() - now.getTime();
-    const diffMin = diffMs / 60000;
-    if (filter === "expired") return diffMin <= 0 || !!b.expired;
-    if (filter === "ending") return diffMin > 0 && diffMin <= 30; // akan habis = <= 30 minutes
-    // default active
-    return diffMin > 0 && !b.expired;
-  });
-
-  if (filtered.length === 0) {
-    return (
-      <div className="p-6">
-        <h3 className="text-2xl font-semibold mb-4">Pemesanan Aktif</h3>
-        <div className="text-center text-gray-500 mt-20">Belum ada pemesanan sesuai filter.</div>
-      </div>
-    );
-  }
+export default function BookingGridHeader({ activeFilter = "active", onChange = () => {} }) {
+  const tabs = [
+    { id: "active", label: "Total Aktif", icon: "🎵" },
+    { id: "ending", label: "Akan Habis", icon: "⏳" },
+    { id: "expired", label: "Waktu Habis", icon: "⚠️" },
+  ];
 
   return (
-    <div className="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6">
-      {filtered.map((b) => (
-        <BookingCard key={b.id} booking={b} onCancel={onCancel} onExtend={onExtend} onComplete={onComplete} />
-      ))}
+    <div className="px-6 pt-6">
+      <div className="flex items-center gap-3 mb-4">
+        {tabs.map((tab) => {
+          const active = activeFilter === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => onChange(tab.id)}
+              aria-pressed={active}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 focus:outline-none ${
+                active
+                  ? "bg-gradient-to-r from-pink-600/30 to-purple-500/20 text-pink-400 shadow-sm"
+                  : "bg-gray-800/40 text-gray-400 hover:text-gray-200 hover:bg-gray-700/40"
+              }`}
+            >
+              <span aria-hidden>{tab.icon}</span>
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
+      </div>
+      <hr className="border-t border-gray-800/50" />
     </div>
   );
 }
