@@ -1,88 +1,134 @@
-import { useEffect, useState, useCallback, useRef } from "react";
-import { db, ref, onValue, push, set, remove, update } from "../firebaseConfig";
+// src/hooks/useFirebaseBookings.js
+import { useEffect, useRef, useState, useCallback } from "react";
+import { db, ref, onValue, set, remove, update, push } from "../firebaseConfig";
 
 export default function useFirebaseBookings(currentUser = "") {
   const [bookings, setBookings] = useState([]);
   const [expiredBookings, setExpiredBookings] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const expireLockRef = useRef({});
+  const expireLockRef = useRef({}); // avoid double-mark
+  const timerRef = useRef(null);
 
+  // parse snapshot -> normalized booking objects
+  const parseBookingsSnapshot = (dataObj) => {
+    if (!dataObj) return [];
+    return Object.entries(dataObj).map(([id, v]) => {
+      const parsed = {
+        id,
+        room: v.room,
+        startTime: v.startTime ? new Date(v.startTime) : null,
+        endTime: v.endTime ? new Date(v.endTime) : null,
+        durationMinutes: v.durationMinutes || 0,
+        people: v.people || 0,
+        cashier: v.cashier || v.handledBy || null,
+        priceMeta: v.priceMeta || v.price || null,
+        expired: !!v.expired,
+      };
+      return parsed;
+    });
+  };
+
+  // subscribe to bookings in RTDB
   useEffect(() => {
     const bookingsRef = ref(db, "bookings");
-    const unsub = onValue(bookingsRef, (snapshot) => {
-      setIsLoading(false);
-      const data = snapshot.val() || {};
-      const arr = Object.entries(data).map(([id, v]) => {
-        return {
-          id,
-          ...v,
-          startTime: v.startTime ? new Date(v.startTime) : null,
-          endTime: v.endTime ? new Date(v.endTime) : null,
-        };
-      });
-      setBookings(arr);
-
-      // set expired list
-      const now = new Date();
-      const expired = arr.filter((b) => b.endTime && b.endTime <= now && !b.expired);
-      setExpiredBookings((prev) => {
-        // merge unique
-        const ids = new Set(prev.map((p) => p.id));
-        const merged = [...prev];
-        expired.forEach((e) => {
-          if (!ids.has(e.id)) merged.push({ ...e, expired: true });
-        });
-        return merged;
-      });
+    const unsub = onValue(bookingsRef, (snap) => {
+      const data = snap.val();
+      const parsed = parseBookingsSnapshot(data);
+      setBookings(parsed);
     });
-
     return () => unsub();
   }, []);
 
+  // compute expiredBookings and optionally mark expired in DB
+  useEffect(() => {
+    // clear previous interval
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+    }
+
+    const checkLoop = () => {
+      const now = Date.now();
+      const expired = [];
+      bookings.forEach((b) => {
+        if (!b.endTime) return;
+        const endMs = b.endTime.getTime();
+        if (endMs <= now) {
+          expired.push(b);
+          // mark in DB if not already marked and not locked
+          if (!b.expired && !expireLockRef.current[b.id]) {
+            expireLockRef.current[b.id] = true;
+            update(ref(db, "bookings/" + b.id), { expired: true })
+              .catch((err) => {
+                console.warn("Failed to mark expired:", b.id, err.message);
+                expireLockRef.current[b.id] = false;
+              });
+          }
+        }
+      });
+      setExpiredBookings(expired);
+    };
+
+    // first run + set interval every second
+    checkLoop();
+    timerRef.current = setInterval(checkLoop, 1000);
+    return () => clearInterval(timerRef.current);
+  }, [bookings]);
+
+  // actions
   const addBooking = useCallback(async (booking) => {
-    if (!booking || !booking.room) throw new Error("Invalid booking");
+    // booking expected to have room, startTime (ISO), endTime (ISO), durationMinutes, people, cashier, priceMeta
     const node = push(ref(db, "bookings"));
     const id = node.key;
-    await set(node, {
-      ...booking,
-      createdBy: booking.cashier || booking.createdBy || currentUser || "Unknown",
-      expired: false,
-    });
+    await set(node, { ...booking, id });
     return id;
-  }, [currentUser]);
+  }, []);
 
   const removeBooking = useCallback(async (id) => {
     if (!id) return;
-    await remove(ref(db, `bookings/${id}`));
-    setExpiredBookings((prev) => prev.filter((b) => b.id !== id));
+    try {
+      await remove(ref(db, "bookings/" + id));
+      delete expireLockRef.current[id];
+    } catch (e) {
+      console.error("removeBooking failed:", e);
+      throw e;
+    }
   }, []);
 
   const extendBooking = useCallback(async (booking, extraMinutes = 60) => {
     if (!booking || !booking.id) return;
-    const newEnd = new Date(booking.endTime.getTime() + extraMinutes * 60000);
-    await update(ref(db, `bookings/${booking.id}`), {
-      endTime: newEnd.toISOString(),
-      expired: false,
-    });
-    setExpiredBookings((prev) => prev.filter((b) => b.id !== booking.id));
+    const currentEnd = booking.endTime ? booking.endTime.getTime() : Date.now();
+    const newEnd = new Date(currentEnd + extraMinutes * 60_000);
+    await update(ref(db, "bookings/" + booking.id), { endTime: newEnd.toISOString(), expired: false });
+    delete expireLockRef.current[booking.id];
   }, []);
 
-  const completeBooking = useCallback(async (bookingId) => {
-    if (!bookingId) return;
-    // move to history
-    const snapshotRef = ref(db, `bookings/${bookingId}`);
-    // read current booking then push to history
-    // simplified: read via onValue once
-    await onValue(snapshotRef, async (snap) => {
-      const data = snap.val();
-      if (!data) return;
-      const histRef = push(ref(db, "history"));
-      const finishedAt = new Date().toISOString();
-      await set(histRef, { ...data, finishedAt });
-      await remove(snapshotRef);
-    }, { onlyOnce: true });
-    setExpiredBookings((prev) => prev.filter((b) => b.id !== bookingId));
-  }, []);
+  const completeBooking = useCallback(async (id) => {
+    if (!id) return;
+    // move to history then remove from bookings
+    try {
+      const historyRef = push(ref(db, "history"));
+      // read current booking snapshot is not included here - we assume front-end has booking details
+      // but to be safe, try to read once from DB then set history then remove booking
+      const bRef = ref(db, "bookings/" + id);
+      // get value once
+      // NOTE: simple approach - fetch via onValue once (subscribe/unsub)
+      let val;
+      await new Promise((res, rej) => {
+        const off = onValue(bRef, (s) => {
+          val = s.val();
+          off();
+          res();
+        }, (err) => rej(err), { onlyOnce: true });
+      });
+      if (val) {
+        await set(historyRef, { ...val, finishedAt: new Date().toISOString(), handledBy: val.cashier || currentUser || null });
+      }
+      await remove(bRef);
+      delete expireLockRef.current[id];
+    } catch (e) {
+      console.error("completeBooking failed:", e);
+      throw e;
+    }
+  }, [currentUser]);
 
   return {
     bookings,
@@ -91,6 +137,5 @@ export default function useFirebaseBookings(currentUser = "") {
     removeBooking,
     extendBooking,
     completeBooking,
-    isLoading,
   };
 }
