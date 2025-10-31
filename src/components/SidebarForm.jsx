@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { formatTimeForInput, calculateTarif, calculateTotalPriceWithPromo } from "../utils/helpers";
-import { ROOM_NAMES } from "../data/constants";
+import { formatTimeForInput, calculateTotalPriceWithPromo } from "../utils/helpers";
+import { ROOM_NAMES, MAX_PEOPLE_PER_ROOM } from "../data/constants";
 
 export default function SidebarForm({
   rooms = ROOM_NAMES,
@@ -9,7 +9,7 @@ export default function SidebarForm({
   formPrefill = null,
   onClearPrefill = () => {},
   currentUser = "Tidak Diketahui",
-  saving = false
+  saving = false,
 }) {
   const [room, setRoom] = useState("");
   const [timeStr, setTimeStr] = useState(() => {
@@ -29,14 +29,13 @@ export default function SidebarForm({
   }, [formPrefill, onClearPrefill]);
 
   useEffect(() => {
-    const t = setInterval(() => {
+    const interval = setInterval(() => {
       const d = new Date();
-      setTimeStr((prev) => {
-        const nowStr = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-        return prev === "" ? nowStr : prev;
-      });
+      setTimeStr(
+        `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
+      );
     }, 60_000);
-    return () => clearInterval(t);
+    return () => clearInterval(interval);
   }, []);
 
   const handleNow = () => {
@@ -45,29 +44,41 @@ export default function SidebarForm({
   };
 
   const handleAdd = async () => {
-    if (!room) return;
+    if (!room) return alert("Pilih ruangan terlebih dahulu.");
     const hh = parseInt(hours || 0, 10);
     const mm = parseInt(minutes || 0, 10);
     const totalMinutes = Math.max(0, hh * 60 + mm);
-    if (totalMinutes <= 0) return;
+    if (totalMinutes <= 0) return alert("Durasi tidak boleh 0 menit.");
+    if (people > MAX_PEOPLE_PER_ROOM) {
+      alert(`Maksimal ${MAX_PEOPLE_PER_ROOM} orang per ruangan.`);
+      return;
+    }
+
     const [tH, tM] = (timeStr || "00:00").split(":").map((s) => parseInt(s, 10));
     const start = new Date();
     start.setHours(tH, tM, 0, 0);
     const end = new Date(start.getTime() + totalMinutes * 60000);
+
     const pricing = calculateTotalPriceWithPromo(start, totalMinutes, people);
-    await onAddBooking({
-      room,
-      startTime: start.toISOString(),
-      endTime: end.toISOString(),
-      durationMinutes: totalMinutes,
-      people: Number(people || 1),
-      cashier: currentUser,
-      priceMeta: pricing
-    });
-    setRoom("");
-    setHours("");
-    setMinutes("");
-    setPeople(1);
+
+    try {
+      await onAddBooking({
+        room,
+        startTime: start.toISOString(),
+        endTime: end.toISOString(),
+        durationMinutes: totalMinutes,
+        people: Number(people || 1),
+        cashier: currentUser,
+        priceMeta: pricing,
+      });
+      setRoom("");
+      setHours("");
+      setMinutes("");
+      setPeople(1);
+    } catch (err) {
+      console.error("Gagal tambah pemesanan:", err);
+      alert("Terjadi kesalahan saat menyimpan pemesanan.");
+    }
   };
 
   return (
@@ -84,8 +95,8 @@ export default function SidebarForm({
           <option value="">-- Pilih Ruangan --</option>
           {Array.isArray(rooms) &&
             rooms.map((r) => (
-              <option key={r} value={r} disabled={Array.isArray(activeRoomNames) && activeRoomNames.includes(r)}>
-                {r} {Array.isArray(activeRoomNames) && activeRoomNames.includes(r) ? " (Terpakai)" : ""}
+              <option key={r} value={r} disabled={activeRoomNames.includes(r)}>
+                {r} {activeRoomNames.includes(r) ? " (Terpakai)" : ""}
               </option>
             ))}
         </select>
@@ -98,7 +109,11 @@ export default function SidebarForm({
             onChange={(e) => setTimeStr(e.target.value)}
             className="flex-1 p-3 bg-gray-800 border border-gray-700 rounded-lg"
           />
-          <button onClick={handleNow} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg" type="button">
+          <button
+            onClick={handleNow}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg"
+            type="button"
+          >
             Sekarang
           </button>
         </div>
@@ -135,8 +150,10 @@ export default function SidebarForm({
 
         <button
           onClick={handleAdd}
-          disabled={saving || (room && Array.isArray(activeRoomNames) && activeRoomNames.includes(room))}
-          className={`w-full py-3 rounded-lg font-semibold transition ${saving ? "bg-gray-700 text-gray-400" : "bg-green-600 hover:bg-green-700"}`}
+          disabled={saving || (room && activeRoomNames.includes(room))}
+          className={`w-full py-3 rounded-lg font-semibold transition ${
+            saving ? "bg-gray-700 text-gray-400" : "bg-green-600 hover:bg-green-700"
+          }`}
           type="button"
         >
           {saving ? "Menyimpan..." : "+ Tambah Pemesanan"}
