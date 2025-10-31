@@ -6,6 +6,7 @@ export default function useFirebaseBookings(currentUser = "Tidak Diketahui") {
   const [expiredBookings, setExpiredBookings] = useState([]);
   const bookedRef = useRef({});
   const expireLockRef = useRef({});
+  const expiredCacheRef = useRef({}); // cache local expired booking
   const timerRef = useRef(null);
 
   const normalize = (dataObj) => {
@@ -17,6 +18,7 @@ export default function useFirebaseBookings(currentUser = "Tidak Diketahui") {
     });
   };
 
+  // Listener realtime bookings
   useEffect(() => {
     const bookingsRef = ref(db, "bookings");
     const unsub = onValue(bookingsRef, (snap) => {
@@ -26,22 +28,24 @@ export default function useFirebaseBookings(currentUser = "Tidak Diketahui") {
         const bS = b.startTime ? b.startTime.getTime() : 0;
         return aS - bS;
       });
+
       bookedRef.current = arr.reduce((acc, b) => {
         acc[b.id] = b;
         return acc;
       }, {});
-      setBookings(arr);
-      const now = new Date();
-      const expiredLocal = arr.filter((b) => {
-        if (b.expired === true) return true;
-        if (b.endTime && b.endTime.getTime() <= now.getTime()) return true;
-        return false;
+
+      // cache expired bookings
+      arr.forEach((b) => {
+        if (b.expired === true) expiredCacheRef.current[b.id] = b;
       });
-      setExpiredBookings(expiredLocal);
+
+      setBookings(arr);
+      updateExpiredList();
     });
     return () => unsub();
   }, []);
 
+  // Timer: auto mark expired
   useEffect(() => {
     function tick() {
       const now = new Date();
@@ -52,8 +56,9 @@ export default function useFirebaseBookings(currentUser = "Tidak Diketahui") {
         if (b.endTime.getTime() <= now.getTime()) {
           if (!expireLockRef.current[b.id]) {
             expireLockRef.current[b.id] = true;
-            update(ref(db, "bookings/" + b.id), { expired: true }).catch((e) => {
-              expireLockRef.current[b.id] = false;
+            update(ref(db, "bookings/" + b.id), { expired: true }).then(() => {
+              expiredCacheRef.current[b.id] = { ...b, expired: true };
+              updateExpiredList();
             });
           }
         }
@@ -63,6 +68,29 @@ export default function useFirebaseBookings(currentUser = "Tidak Diketahui") {
     return () => clearInterval(timerRef.current);
   }, []);
 
+  // Update expiredBookings state
+  const updateExpiredList = useCallback(() => {
+    const all = Object.values(bookedRef.current);
+    const localExpired = Object.values(expiredCacheRef.current);
+    const now = new Date();
+
+    const expiredList = all
+      .filter((b) => {
+        if (!b) return false;
+        const end = b.endTime ? new Date(b.endTime) : null;
+        if (!end) return false;
+        return b.expired === true || end <= now;
+      })
+      .concat(localExpired)
+      .reduce((acc, b) => {
+        acc[b.id] = b;
+        return acc;
+      }, {});
+
+    setExpiredBookings(Object.values(expiredList));
+  }, []);
+
+  // Booking operations
   const addBooking = useCallback(
     async (bookingData) => {
       const p = push(ref(db, "bookings"));
@@ -80,6 +108,8 @@ export default function useFirebaseBookings(currentUser = "Tidak Diketahui") {
   const removeBooking = useCallback(async (bookingId) => {
     if (!bookingId) return;
     await remove(ref(db, "bookings/" + bookingId));
+    delete expiredCacheRef.current[bookingId];
+    updateExpiredList();
   }, []);
 
   const extendBooking = useCallback(async (bookingId, extraMinutes = 60) => {
@@ -88,12 +118,14 @@ export default function useFirebaseBookings(currentUser = "Tidak Diketahui") {
     if (!b || !b.endTime) return;
     const newEnd = new Date(b.endTime.getTime() + extraMinutes * 60_000);
     await update(ref(db, "bookings/" + bookingId), { endTime: newEnd.toISOString(), expired: false });
+    delete expiredCacheRef.current[bookingId];
+    updateExpiredList();
   }, []);
 
   const completeBooking = useCallback(
     async (bookingId) => {
       if (!bookingId) return;
-      const b = bookedRef.current[bookingId];
+      const b = bookedRef.current[bookingId] || expiredCacheRef.current[bookingId];
       const historyRef = push(ref(db, "history"));
       const finishedAt = new Date().toISOString();
       if (b) {
@@ -102,8 +134,10 @@ export default function useFirebaseBookings(currentUser = "Tidak Diketahui") {
         await set(historyRef, { id: bookingId, finishedAt, movedBy: currentUser || "Tidak Diketahui" });
       }
       await remove(ref(db, "bookings/" + bookingId));
+      delete expiredCacheRef.current[bookingId];
+      updateExpiredList();
     },
-    [currentUser]
+    [currentUser, updateExpiredList]
   );
 
   const sortedBookings = useMemo(() => {
