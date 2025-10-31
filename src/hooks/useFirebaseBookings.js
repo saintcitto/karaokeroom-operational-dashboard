@@ -1,71 +1,64 @@
-import { useEffect, useState, useRef, useCallback } from "react";
-import { db, ref, set, onValue, remove, update, push } from "../firebaseConfig";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { db, ref, onValue, set, remove, update, push } from "../firebaseConfig";
+import { calculateTotalPriceWithPromo } from "../utils/helpers";
 import { PolySynth, Filter, LFO, Transport, start as ToneStart, context as ToneContext } from "tone";
-import { formatTimeForInput } from "../utils/helpers";
+import useAuditTrail from "./useAuditTrail";
 
-/**
- * Custom Hook: useFirebaseBookings
- * Menangani seluruh logika booking KTV secara real-time
- */
-export default function useFirebaseBookings() {
+export default function useFirebaseBookings(currentUser = "") {
   const [bookings, setBookings] = useState([]);
   const [expiredBookings, setExpiredBookings] = useState([]);
-  const [history, setHistory] = useState([]);
-  const [now, setNow] = useState(new Date());
+  const expireLock = useRef({});
   const alarmRef = useRef(null);
-  const expireLockRef = useRef({});
+  const { logAction } = useAuditTrail(currentUser);
 
-  // -------------------------------
-  //  🔁 Realtime listener bookings
-  // -------------------------------
+  // Realtime sync
   useEffect(() => {
     const bookingsRef = ref(db, "bookings");
-    const unsub = onValue(bookingsRef, (snapshot) => {
-      const data = snapshot.val();
-      if (!data) return setBookings([]);
+    const unsub = onValue(bookingsRef, (snap) => {
+      const data = snap.val() || {};
       const parsed = Object.entries(data).map(([id, v]) => ({
         id,
         ...v,
-        startTime: new Date(v.startTime),
-        endTime: new Date(v.endTime),
+        startTime: v.startTime ? new Date(v.startTime) : null,
+        endTime: v.endTime ? new Date(v.endTime) : null,
       }));
       setBookings(parsed);
     });
     return () => unsub();
   }, []);
 
-  // -------------------------------
-  //  📅 Realtime listener history
-  // -------------------------------
+  // Cek expired setiap 10 detik
   useEffect(() => {
-    const historyRef = ref(db, "history");
-    const unsub = onValue(historyRef, (snapshot) => {
-      const data = snapshot.val() || {};
-      const arr = Object.entries(data).map(([id, v]) => ({ id, ...v }));
-      setHistory(arr);
-    });
-    return () => unsub();
-  }, []);
+    const interval = setInterval(() => {
+      const now = new Date();
+      const toExpire = bookings.filter(
+        (b) => !b.expired && b.endTime && b.endTime <= now && !expireLock.current[b.id]
+      );
+      toExpire.forEach((b) => markExpired(b));
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [bookings]);
 
-  // -------------------------------
-  //  ⏰ Realtime jam & auto-expire
-  // -------------------------------
-  useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
+  const markExpired = useCallback(async (booking) => {
+    if (!booking?.id || expireLock.current[booking.id]) return;
+    expireLock.current[booking.id] = true;
+    try {
+      await update(ref(db, "bookings/" + booking.id), { expired: true });
+      setExpiredBookings((prev) => {
+        const exists = prev.find((b) => b.id === booking.id);
+        if (exists) return prev;
+        const updated = [...prev, { ...booking, expired: true }];
+        if (updated.length && !alarmRef.current) startAlarm();
+        return updated;
+      });
+      await logAction("EXPIRE_BOOKING", { room: booking.room });
+    } catch (err) {
+      console.warn("Gagal update expired:", err.message);
+      expireLock.current[booking.id] = false;
+    }
+  }, [logAction]);
 
-  useEffect(() => {
-    if (!bookings.length) return;
-    const expiredNow = bookings.filter(
-      (b) => !b.expired && b.endTime <= now && !expireLockRef.current[b.id]
-    );
-    expiredNow.forEach((booking) => handleExpire(booking));
-  }, [bookings, now]);
-
-  // -------------------------------
-  //  🔔 Tone.js Alarm Control
-  // -------------------------------
+  // Tone.js alarm system
   const startAlarm = useCallback(async () => {
     try {
       await ToneStart();
@@ -104,99 +97,92 @@ export default function useFirebaseBookings() {
     }
   }, []);
 
-  // -------------------------------
-  //  🔧 Booking CRUD Operations
-  // -------------------------------
-  const addBooking = async (newBooking) => {
-    if (!newBooking?.id && !newBooking?.room) return;
-    const id = newBooking.id || Date.now().toString();
-    const path = ref(db, "bookings/" + id);
-    await set(path, {
-      ...newBooking,
-      id,
-      startTime: newBooking.startTime.toISOString(),
-      endTime: newBooking.endTime.toISOString(),
-      expired: false,
-    });
-  };
-
-  const removeBooking = async (bookingId) => {
-    if (!bookingId) return;
-    try {
-      await remove(ref(db, "bookings/" + bookingId));
-      delete expireLockRef.current[bookingId];
-      setExpiredBookings((prev) => prev.filter((b) => b.id !== bookingId));
-    } catch (err) {
-      console.error("Failed to remove booking:", err);
-    }
-  };
-
-  const handleExpire = useCallback(
-    (booking) => {
-      if (!booking?.id) return;
-      if (expireLockRef.current[booking.id]) return;
-      expireLockRef.current[booking.id] = true;
-      update(ref(db, "bookings/" + booking.id), { expired: true })
-        .then(() => {
-          setExpiredBookings((prev) => {
-            const exists = prev.find((b) => b.id === booking.id);
-            if (exists) return prev;
-            const updated = [...prev, { ...booking, expired: true }];
-            if (updated.length > 0 && !alarmRef.current) startAlarm();
-            return updated;
-          });
-        })
-        .catch((err) => {
-          console.warn("⚠️ Failed to mark expired:", booking.room, err.message);
-          expireLockRef.current[booking.id] = false;
-        });
-    },
-    [startAlarm]
-  );
-
-  const extendBooking = useCallback(async (booking, extraMinutes = 60) => {
-    if (!booking?.id) return;
-    const newEndTime = new Date(booking.endTime.getTime() + extraMinutes * 60000);
-    await update(ref(db, "bookings/" + booking.id), { endTime: newEndTime.toISOString(), expired: false });
-    stopAlarm();
-    setExpiredBookings((prev) => prev.filter((b) => b.id !== booking.id));
-  }, [stopAlarm]);
-
-  const completeBooking = useCallback(async (bookingId, handledBy = "Unknown") => {
-    const finishedBooking = bookings.find((b) => b.id === bookingId);
-    if (finishedBooking) {
-      const historyRef = push(ref(db, "history"));
-      await set(historyRef, {
-        ...finishedBooking,
-        finishedAt: new Date().toISOString(),
-        handledBy,
-      });
-    }
-    await remove(ref(db, "bookings/" + bookingId));
-    setExpiredBookings((prev) => prev.filter((b) => b.id !== bookingId));
-    stopAlarm();
-  }, [bookings, stopAlarm]);
-
-  // -------------------------------
-  //  🔁 Alarm Sync dengan Expired List
-  // -------------------------------
   useEffect(() => {
     if (expiredBookings.length > 0) startAlarm();
     else stopAlarm();
   }, [expiredBookings, startAlarm, stopAlarm]);
 
-  // -------------------------------
-  //  📦 Return semua state & fungsi
-  // -------------------------------
+  // CRUD actions
+  const addBooking = useCallback(async (booking) => {
+    try {
+      const { total, freeMinutes, promoNote } = calculateTotalPriceWithPromo(
+        new Date(booking.startTime),
+        booking.durationMinutes,
+        booking.people
+      );
+
+      const newBooking = {
+        ...booking,
+        cashier: currentUser || "Tidak Diketahui",
+        totalPrice: total,
+        freeMinutes,
+        promoNote,
+        expired: false,
+        startTime: booking.startTime instanceof Date ? booking.startTime.toISOString() : booking.startTime,
+        endTime: booking.endTime instanceof Date ? booking.endTime.toISOString() : booking.endTime,
+      };
+
+      const newRef = push(ref(db, "bookings"));
+      await set(newRef, newBooking);
+      await logAction("ADD_BOOKING", { room: newBooking.room, duration: booking.durationMinutes });
+    } catch (err) {
+      console.error("Gagal addBooking:", err);
+    }
+  }, [currentUser, logAction]);
+
+  const removeBooking = useCallback(async (id) => {
+    try {
+      await remove(ref(db, "bookings/" + id));
+      setExpiredBookings((prev) => prev.filter((b) => b.id !== id));
+      await logAction("REMOVE_BOOKING", { bookingId: id });
+    } catch (err) {
+      console.error("Gagal removeBooking:", err);
+    }
+  }, [logAction]);
+
+  const extendBooking = useCallback(async (booking) => {
+    if (!booking?.id) return;
+    try {
+      const start = new Date(booking.endTime);
+      const end = new Date(start.getTime() + booking.durationMinutes * 60000);
+      const updated = {
+        ...booking,
+        startTime: start.toISOString(),
+        endTime: end.toISOString(),
+        expired: false,
+      };
+      await set(ref(db, "bookings/" + booking.id), updated);
+      setExpiredBookings((prev) => prev.filter((b) => b.id !== booking.id));
+      await logAction("EXTEND_BOOKING", { room: booking.room, newEnd: end.toISOString() });
+    } catch (err) {
+      console.error("Gagal extendBooking:", err);
+    }
+  }, [logAction]);
+
+  const completeBooking = useCallback(async (bookingId) => {
+    const booking = bookings.find((b) => b.id === bookingId);
+    if (!booking) return;
+    try {
+      const historyRef = push(ref(db, "history"));
+      await set(historyRef, {
+        ...booking,
+        finishedAt: new Date().toISOString(),
+        handledBy: currentUser,
+      });
+      await remove(ref(db, "bookings/" + bookingId));
+      setExpiredBookings((prev) => prev.filter((b) => b.id !== bookingId));
+      await logAction("COMPLETE_BOOKING", { room: booking.room });
+    } catch (err) {
+      console.error("Gagal completeBooking:", err);
+    }
+  }, [bookings, currentUser, logAction]);
+
   return {
     bookings,
     expiredBookings,
-    history,
     addBooking,
     removeBooking,
     extendBooking,
     completeBooking,
-    startAlarm,
-    stopAlarm,
   };
 }
