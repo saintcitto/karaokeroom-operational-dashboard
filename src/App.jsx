@@ -1,76 +1,46 @@
 import React, { useState } from "react";
-import BookingGrid from "./components/BookingGrid";
-import BookingGridHeader from "./components/BookingGridHeader";
 import SidebarForm from "./components/SidebarForm";
-import ExpiredModal from "./components/ExpiredModal";
+import BookingGrid from "./components/BookingGrid";
 import useFirebaseBookings from "./hooks/useFirebaseBookings";
-import { ROOM_NAMES } from "./data/constants";
-import KTVErrorBoundary from "./components/KTVErrorBoundary";
 
 export default function App() {
-  const [currentUser, setCurrentUser] = useState(localStorage.getItem("currentUser") || "");
-  const { bookings, expiredBookings, addBooking, removeBooking, extendBooking, completeBooking } = useFirebaseBookings(currentUser);
-
+  const [currentUser, setCurrentUser] = useState(
+    localStorage.getItem("currentUser") || ""
+  );
+  const { bookings, addBooking, removeBooking, completeBooking } = useFirebaseBookings();
   const [filter, setFilter] = useState("active");
-  const [saving, setSaving] = useState(false);
-  const [activeModal, setActiveModal] = useState(null);
-
-  const handleAddBooking = async (data) => {
-    setSaving(true);
-    try {
-      await addBooking(data);
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const handleLogout = () => {
     localStorage.removeItem("currentUser");
     setCurrentUser("");
   };
 
+  const handleAddBooking = async (payload) => {
+    try {
+      await addBooking({
+        ...payload,
+        cashier: currentUser || "Tidak Diketahui",
+      });
+    } catch (err) {
+      console.error("Gagal menambah booking:", err);
+    }
+  };
+
   return (
-    <KTVErrorBoundary>
-      <div className="flex flex-col md:flex-row bg-gray-950 text-white min-h-screen overflow-hidden">
-        <SidebarForm
-          rooms={ROOM_NAMES}
-          activeRoomNames={bookings.map(b => b.room)}
-          onAddBooking={handleAddBooking}
-          currentUser={currentUser}
-          onLogout={handleLogout}
-          saving={saving}
+    <div className="flex flex-col md:flex-row bg-gray-950 text-white min-h-screen">
+      <SidebarForm
+        currentUser={currentUser}
+        onLogout={handleLogout}
+        onAddBooking={handleAddBooking}
+      />
+      <main className="flex-1 overflow-y-auto">
+        <BookingGrid
+          bookings={bookings}
+          onCancel={removeBooking}
+          onComplete={(id) => completeBooking(id, currentUser)}
+          filter={filter}
         />
-
-        <main className="flex-1 overflow-y-auto">
-          <BookingGridHeader activeFilter={filter} onChange={setFilter} />
-          <BookingGrid
-            bookings={bookings}
-            onCancel={removeBooking}
-            onExtend={(id) => extendBooking(id, 30)}
-            onComplete={(id) => {
-              completeBooking(id, currentUser);
-              setActiveModal(null);
-            }}
-            filter={filter}
-          />
-        </main>
-
-        {activeModal && (
-          <ExpiredModal
-            booking={activeModal}
-            onComplete={(id) => { completeBooking(id, currentUser); setActiveModal(null); }}
-            onCancel={() => setActiveModal(null)}
-          />
-        )}
-
-        {!activeModal && expiredBookings.length > 0 && (
-          <ExpiredModal
-            booking={expiredBookings[0]}
-            onComplete={(id) => { completeBooking(id, currentUser); }}
-            onCancel={() => {}}
-          />
-        )}
-      </div>
-    </KTVErrorBoundary>
+      </main>
+    </div>
   );
 }
