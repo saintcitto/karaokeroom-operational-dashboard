@@ -1,4 +1,3 @@
-// src/App.jsx
 import React, { useState } from "react";
 import BookingGrid from "./components/BookingGrid";
 import BookingGridHeader from "./components/BookingGridHeader";
@@ -18,8 +17,11 @@ export default function App() {
 
   const handleAddBooking = async (data) => {
     setSaving(true);
-    await addBooking(data);
-    setSaving(false);
+    try {
+      await addBooking(data);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleLogout = () => {
@@ -44,9 +46,8 @@ export default function App() {
           <BookingGrid
             bookings={bookings}
             onCancel={removeBooking}
-            onExtend={(b) => extendBooking(b)}
+            onExtend={(id) => extendBooking(id, 30)}
             onComplete={(id) => {
-              // forward to completeBooking (move to history)
               completeBooking(id, currentUser);
               setActiveModal(null);
             }}
@@ -54,7 +55,6 @@ export default function App() {
           />
         </main>
 
-        {/* expired modal: prefer show first expiredBookings[0] if expired */}
         {activeModal && (
           <ExpiredModal
             booking={activeModal}
