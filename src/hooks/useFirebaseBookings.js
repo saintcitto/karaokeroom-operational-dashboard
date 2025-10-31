@@ -36,21 +36,22 @@ export default function useFirebaseBookings(currentUser = "") {
   }, []);
 
   async function addBooking(data) {
+    // Expect data: { room, startTime (ISO), endTime (ISO), durationMinutes, people, cashier, priceMeta, promoNote }
     const node = ref(db, "bookings");
-    const payload = {
+    const safePayload = {
       room: data.room || "Unknown",
-      startTime: data.startTime,
-      endTime: data.endTime,
-      durationMinutes: data.durationMinutes,
+      startTime: data.startTime || new Date().toISOString(),
+      endTime: data.endTime || new Date(Date.now() + ((data.durationMinutes || 60) * 60000)).toISOString(),
+      durationMinutes: data.durationMinutes || 60,
       people: data.people || 1,
       createdAt: serverTimestamp(),
-      cashier: data.cashier || "Tidak Diketahui",
+      cashier: data.cashier || (currentUser || "Tidak Diketahui"),
       priceMeta: data.priceMeta || {},
       expired: false,
       promoNote: data.promoNote || "-"
     };
     const p = push(node);
-    await set(p, payload);
+    await set(p, safePayload);
     return p.key;
   }
 
