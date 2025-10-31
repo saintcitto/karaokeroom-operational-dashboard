@@ -1,123 +1,139 @@
 // src/hooks/useFirebaseBookings.js
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   db,
   ref,
   onValue,
-  push,
-  remove,
-  update,
   set,
-  serverTimestamp,
+  push,
+  update,
+  remove,
+  serverTimestamp
 } from "../firebaseConfig";
 
 /**
  * useFirebaseBookings
- * - currentUser: string (nama kasir) — optional
+ * - currentUser: string (nama kasir)
  *
  * Exposed:
- * - bookings: array (live, sorted by startTime)
- * - expiredBookings: array (bookings flagged expired in DB OR whose endTime <= now and not moved to history)
- * - addBooking(data)
- * - removeBooking(id)
- * - extendBooking({ id, extraMinutes })  // OR pass full new endTime
- * - completeBooking(id, completedBy) -> moves booking -> /history and removes /bookings/{id}
+ * bookings: array from /bookings (live)
+ * history: array from /history (live)  -- kept for possible future UI
+ * expiredBookings: bookings.filter(b => b.expired && !b.completedAt)
+ * addBooking(data)
+ * removeBooking(id)
+ * extendBooking(id, extraMinutes)
+ * completeBooking(id, completedBy)
+ *
+ * Implementation notes:
+ * - markExpired() runs every 10s and will set { expired: true } on past bookings
+ * - when completing, function pushes to /history (with createdAt/completedAt) then removes from /bookings
+ * - we watch .info/connected for debug logs
  */
-export default function useFirebaseBookings(currentUser = null) {
-  const [bookings, setBookings] = useState([]);
-  const [expiredBookings, setExpiredBookings] = useState([]);
-  const bookingsRef = useRef(null);
 
-  // Subscribe to bookings node
+export default function useFirebaseBookings(currentUser = "") {
+  const [bookings, setBookings] = useState([]);
+  const [history, setHistory] = useState([]);
+  const listenersRef = useRef({}); // for cleanup
+  const tickRef = useRef(null);
+
+  // helper to transform snapshot val map to array with id
+  const snapToArray = (snapVal) => {
+    if (!snapVal) return [];
+    return Object.entries(snapVal).map(([id, value]) => ({ id, ...value }));
+  };
+
   useEffect(() => {
-    const r = ref(db, "bookings");
-    bookingsRef.current = r;
-    const unsub = onValue(r, (snap) => {
-      const val = snap.val();
-      const list = [];
-      if (val) {
-        Object.entries(val).forEach(([key, v]) => {
-          list.push({
-            id: key,
-            ...v,
-          });
-        });
-      }
-      // sort by startTime ascending
-      list.sort((a, b) => {
-        const A = a.startTime ? new Date(a.startTime).getTime() : 0;
-        const B = b.startTime ? new Date(b.startTime).getTime() : 0;
-        return A - B;
-      });
-      setBookings(list);
+    // bookings listener
+    const bookingsRef = ref(db, "bookings");
+    listenersRef.current.bookings = onValue(bookingsRef, (snapshot) => {
+      const val = snapshot.val();
+      const arr = snapToArray(val);
+      setBookings(arr);
+    }, (err) => {
+      console.error("[useFirebaseBookings] bookings onValue error:", err);
     });
-    return () => unsub();
+
+    // history listener
+    const historyRef = ref(db, "history");
+    listenersRef.current.history = onValue(historyRef, (snapshot) => {
+      const val = snapshot.val();
+      const arr = snapToArray(val);
+      setHistory(arr);
+    }, (err) => {
+      console.error("[useFirebaseBookings] history onValue error:", err);
+    });
+
+    // connection state (for debugging network issues)
+    const connRef = ref(db, ".info/connected");
+    listenersRef.current.conn = onValue(connRef, (snap) => {
+      const connected = snap.val();
+      console.log("[useFirebaseBookings] Realtime DB connected:", !!connected);
+    });
+
+    // start a tick to mark expired
+    tickRef.current = setInterval(() => {
+      try {
+        markExpiredBookings();
+      } catch (err) {
+        console.error("[useFirebaseBookings] markExpiredBookings error:", err);
+      }
+    }, 10000); // every 10s
+
+    return () => {
+      // cleanup listeners
+      try {
+        if (listenersRef.current.bookings) listenersRef.current.bookings();
+        if (listenersRef.current.history) listenersRef.current.history();
+        if (listenersRef.current.conn) listenersRef.current.conn();
+      } catch (e) {
+        // no-op
+      }
+      if (tickRef.current) clearInterval(tickRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // compute expiredBookings from bookings and DB's expired flag
-  useEffect(() => {
+  // markExpiredBookings: check each booking locally and update DB if past endTime & not expired
+  const markExpiredBookings = async () => {
+    if (!Array.isArray(bookings) || bookings.length === 0) return;
     const now = Date.now();
-    const expired = bookings.filter((b) => {
-      if (!b || !b.endTime) return false;
+    for (const b of bookings) {
+      if (!b || !b.endTime) continue;
+      if (b.expired) continue; // already marked
       const end = new Date(b.endTime).getTime();
-      // treat booking as expired if DB flag expired === true OR endTime passed
-      const isFlag = !!b.expired;
-      return isFlag || end <= now;
-    });
-    // keep only those still in bookings (not moved to history)
-    setExpiredBookings(expired);
-  }, [bookings]);
-
-  // periodic scanner: mark expired=true in DB for bookings past endTime (to persist "Waktu Habis")
-  useEffect(() => {
-    const tick = () => {
-      const now = Date.now();
-      if (!bookings || bookings.length === 0) return;
-      bookings.forEach((b) => {
-        if (!b || !b.endTime) return;
-        const end = new Date(b.endTime).getTime();
-        if (end <= now && !b.expired) {
-          // mark expired in DB
-          try {
-            const updateRef = ref(db, `bookings/${b.id}`);
-            update(updateRef, { expired: true });
-          } catch (err) {
-            // ignore (firestore permission issues may occur in prod)
-            // console.warn("Failed to mark expired", err);
-          }
+      if (end <= now) {
+        // mark expired in DB
+        try {
+          const updateRef = ref(db, `bookings/${b.id}`);
+          await update(updateRef, { expired: true });
+          console.log(`[useFirebaseBookings] marked expired: ${b.id} (${b.room})`);
+        } catch (err) {
+          console.warn("[useFirebaseBookings] failed to set expired flag", b.id, err);
         }
-      });
-    };
-    const id = setInterval(tick, 10_000); // every 10s
-    // initial run
-    tick();
-    return () => clearInterval(id);
-  }, [bookings]);
+      }
+    }
+  };
 
-  // Helper: calculate pricing meta - keep compatibility with utils.calculateTotalPriceWithPromo
-  const addBooking = async (data = {}) => {
-    // expected fields: room, startTime(ISO), endTime(ISO), durationMinutes, people, cashier, priceMeta
-    const payload = {
-      room: data.room || "Unknown",
-      startTime: data.startTime || new Date().toISOString(),
-      endTime: data.endTime || new Date().toISOString(),
-      durationMinutes: Number(data.durationMinutes || 0),
-      people: Number(data.people || 1),
-      cashier: data.cashier || currentUser || "Tamu",
-      priceMeta: data.priceMeta || {},
-      createdAt: serverTimestamp(),
+  // addBooking: expects {room, startTime (ISO), endTime (ISO), durationMinutes, people, cashier, priceMeta}
+  const addBooking = async (data) => {
+    const pushRef = ref(db, "bookings");
+    const now = Date.now();
+    const record = {
+      ...data,
+      createdAt: now,
       expired: false,
+      cashier: data.cashier || "Tidak Diketahui",
     };
-    const r = ref(db, "bookings");
     try {
-      await push(r, payload);
-      return true;
+      const newRef = await push(pushRef, record);
+      return newRef.key;
     } catch (err) {
-      console.error("addBooking error", err);
+      console.error("[useFirebaseBookings] addBooking failed", err);
       throw err;
     }
   };
 
+  // removeBooking: immediate delete from bookings
   const removeBooking = async (id) => {
     if (!id) return;
     try {
@@ -125,68 +141,74 @@ export default function useFirebaseBookings(currentUser = null) {
       await remove(r);
       return true;
     } catch (err) {
-      console.error("removeBooking error", err);
+      console.error("[useFirebaseBookings] removeBooking failed", err);
       throw err;
     }
   };
 
-  const extendBooking = async ({ id, newEndTimeISO, extraMinutes = 0 }) => {
+  // extendBooking: extend endTime by minutes, update priceMeta accordingly (caller may pass new priceMeta or we recompute simple)
+  const extendBooking = async (id, extraMinutes = 30, newPriceMeta = null) => {
     if (!id) return;
     try {
-      const bRef = ref(db, `bookings/${id}`);
-      // compute if newEndTimeISO not provided
-      if (!newEndTimeISO && extraMinutes > 0) {
-        // read current booking from local state cache
-        const existing = bookings.find((b) => b.id === id);
-        if (!existing) throw new Error("Booking not found");
-        const curEnd = new Date(existing.endTime).getTime();
-        const newEnd = new Date(curEnd + extraMinutes * 60000).toISOString();
-        newEndTimeISO = newEnd;
-      }
-      const updates = { endTime: newEndTimeISO, expired: false };
-      await update(bRef, updates);
+      const b = bookings.find((x) => x.id === id);
+      if (!b) throw new Error("booking not found");
+      const currentEnd = new Date(b.endTime).getTime();
+      const newEnd = new Date(currentEnd + extraMinutes * 60000).toISOString();
+      const updates = { endTime: newEnd, expired: false };
+      if (newPriceMeta) updates.priceMeta = newPriceMeta;
+      const r = ref(db, `bookings/${id}`);
+      await update(r, updates);
       return true;
     } catch (err) {
-      console.error("extendBooking error", err);
+      console.error("[useFirebaseBookings] extendBooking failed", err);
       throw err;
     }
   };
 
-  const completeBooking = async (id, completedBy = currentUser || "Tamu") => {
+  // completeBooking: push to history then remove booking. We'll set completedAt + completedBy.
+  const completeBooking = async (id, completedBy = "") => {
     if (!id) return;
     try {
-      // fetch booking data from local state
-      const booking = bookings.find((b) => b.id === id);
-      if (!booking) {
-        // fallback: attempt to move via DB read -> then delete
-        // For simplicity, just remove if not in bookings snapshot
-        const r = ref(db, `bookings/${id}`);
-        await remove(r);
-        return true;
+      const b = bookings.find((x) => x.id === id);
+      if (!b) {
+        // maybe it was already moved; return quietly
+        console.warn("[useFirebaseBookings] completeBooking: booking not found locally", id);
+        return;
       }
-      // push to history
-      const histRef = ref(db, "history");
-      const histPayload = {
-        ...booking,
-        originalId: booking.id,
-        completedBy,
-        completedAt: serverTimestamp(),
+      const historyRef = ref(db, "history");
+      const now = Date.now();
+      const historyPayload = {
+        ...b,
+        originalId: b.id,
+        completedAt: now,
+        completedBy: completedBy || (currentUser || ""),
       };
-      // remove id from payload (history will have new key)
-      delete histPayload.id;
-      await push(histRef, histPayload);
-      // then remove booking from bookings node
-      const remRef = ref(db, `bookings/${booking.id}`);
-      await remove(remRef);
+      // push to history
+      await push(historyRef, historyPayload);
+      // then remove from bookings
+      const r = ref(db, `bookings/${id}`);
+      await remove(r);
+      console.log(`[useFirebaseBookings] completed booking ${id} -> history`);
       return true;
     } catch (err) {
-      console.error("completeBooking error", err);
+      console.error("[useFirebaseBookings] completeBooking failed", err);
+      // best-effort: try to set completedAt on bookings so UI shows it's completed
+      try {
+        const r = ref(db, `bookings/${id}`);
+        await update(r, { completedAt: Date.now(), completedBy: completedBy || currentUser || "" });
+      } catch (e) {
+        // ignore
+      }
       throw err;
     }
   };
+
+  // expiredBookings (not-yet-completed)
+  const expiredBookings = bookings.filter((b) => b && b.expired && !b.completedAt);
 
   return {
     bookings,
+    history,
     expiredBookings,
     addBooking,
     removeBooking,
