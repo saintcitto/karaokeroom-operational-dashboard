@@ -1,120 +1,175 @@
 // src/hooks/useFirebaseBookings.js
-import { useEffect, useState, useCallback, useRef } from "react";
-import { db, ref, onValue, set, push, remove, update } from "../firebaseConfig";
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { db } from '../firebaseConfig';
+import { ref, onValue, push, update, remove, set } from 'firebase/database';
 
-function parseBooking(id, raw) {
-  const startTime = raw.startTime ? new Date(raw.startTime) : null;
-  const endTime = raw.endTime ? new Date(raw.endTime) : null;
-  return {
-    id,
-    ...raw,
-    startTime,
-    endTime,
-    expired: !!raw.expired,
-  };
+function safeParseDate(v) {
+  try {
+    return v ? new Date(v) : null;
+  } catch {
+    return null;
+  }
 }
 
 export default function useFirebaseBookings(currentUser = null) {
   const [bookings, setBookings] = useState([]);
+  const [history, setHistory] = useState([]);
   const [expiredBookings, setExpiredBookings] = useState([]);
-  const pollingRef = useRef(null);
-  const lockRef = useRef({});
+  const watchersRef = useRef({ bookings: null, history: null });
+  const timerRef = useRef(null);
 
-  // Listen realtime bookings node
+  const snapshotToArray = (snapVal) => {
+    if (!snapVal) return [];
+    return Object.entries(snapVal).map(([key, val]) => ({ id: key, ...val }));
+  };
+
+  // Listen bookings
   useEffect(() => {
-    const bookingsRef = ref(db, "bookings");
+    const bookingsRef = ref(db, 'bookings');
     const unsub = onValue(bookingsRef, (snap) => {
-      const val = snap.val() || {};
-      const arr = Object.entries(val).map(([id, raw]) => parseBooking(id, raw));
+      const raw = snap.val();
+      const arr = snapshotToArray(raw).map((b) => {
+        // normalize dates
+        const startTime = safeParseDate(b.startTime);
+        const endTime = safeParseDate(b.endTime);
+        return { ...b, startTime, endTime };
+      });
+
+      // expired list (flagged or endTime <= now)
+      const now = new Date();
+      const expired = arr.filter((b) => (b.expired === true) || (b.endTime && b.endTime.getTime() <= now.getTime()));
+      setExpiredBookings(expired);
       setBookings(arr);
-      setExpiredBookings(arr.filter((b) => !!b.expired || (b.endTime && b.endTime <= new Date())));
     });
-    return () => unsub();
+    watchersRef.current.bookings = unsub;
+    return () => {
+      if (unsub) unsub();
+    };
   }, []);
 
-  // Poll to mark expired (server-side persistent mark)
+  // Listen history
   useEffect(() => {
-    const tick = async () => {
-      const now = Date.now();
-      bookings.forEach(async (b) => {
-        if (!b || !b.endTime) return;
-        if ((b.endTime.getTime() <= now) && !b.expired && !lockRef.current[b.id]) {
-          // mark expired in DB so it appears in expired tab
-          lockRef.current[b.id] = true;
-          try {
-            await update(ref(db, `bookings/${b.id}`), { expired: true });
-          } catch (e) {
-            console.warn("Failed to mark expired:", b.id, e);
-            lockRef.current[b.id] = false;
-          }
-        }
-      });
+    const historyRef = ref(db, 'history');
+    const unsub = onValue(historyRef, (snap) => {
+      const raw = snap.val();
+      const arr = snapshotToArray(raw).map((h) => ({
+        ...h,
+        startTime: safeParseDate(h.startTime),
+        endTime: safeParseDate(h.endTime),
+        finishedAt: safeParseDate(h.finishedAt) || null
+      }));
+      // keep newest first
+      arr.sort((a,b) => (b.finishedAt?.getTime() || 0) - (a.finishedAt?.getTime() || 0));
+      setHistory(arr);
+    });
+    watchersRef.current.history = unsub;
+    return () => {
+      if (unsub) unsub();
     };
-    pollingRef.current = setInterval(tick, 5_000);
-    // run once immediately
-    tick();
-    return () => clearInterval(pollingRef.current);
+  }, []);
+
+  // Periodic expired check: mark booking.expired = true if endTime passed
+  useEffect(() => {
+    const checkAndMark = async () => {
+      try {
+        const now = Date.now();
+        // use current bookings state
+        bookings.forEach(async (b) => {
+          if (!b || !b.id || !b.endTime) return;
+          const endMs = b.endTime.getTime();
+          if (!b.expired && endMs <= now) {
+            const bookingRef = ref(db, `bookings/${b.id}`);
+            // set expired flag so UI / other clients can see
+            await update(bookingRef, { expired: true });
+          }
+        });
+      } catch (e) {
+        console.error('Expired mark failed', e);
+      }
+    };
+
+    // run every 30s
+    timerRef.current = setInterval(checkAndMark, 30_000);
+    // also run immediately once
+    checkAndMark();
+
+    return () => clearInterval(timerRef.current);
   }, [bookings]);
 
-  const addBooking = useCallback(
-    async (payload) => {
-      // use push to generate key, keep structure consistent with other code
-      const node = push(ref(db, "bookings"));
-      const id = node.key;
-      const toSet = {
-        ...payload,
-        createdAt: new Date().toISOString(),
-      };
-      await set(ref(db, `bookings/${id}`), toSet);
-      return id;
-    },
-    []
-  );
+  const addBooking = useCallback(async (data) => {
+    // data expected: { room, startTime (ISO), endTime (ISO), durationMinutes, people, cashier, priceMeta }
+    const bookingsRef = ref(db, 'bookings');
+    const payload = {
+      ...data,
+      createdAt: new Date().toISOString(),
+    };
+    try {
+      const p = await push(bookingsRef, payload);
+      return p.key;
+    } catch (e) {
+      console.error('addBooking failed', e);
+      throw e;
+    }
+  }, []);
 
   const removeBooking = useCallback(async (id) => {
     if (!id) return;
-    await remove(ref(db, `bookings/${id}`));
-  }, []);
-
-  const extendBooking = useCallback(async (booking, minutes = 60) => {
-    if (!booking || !booking.id) return;
-    const newEnd = new Date(booking.endTime.getTime() + minutes * 60 * 1000);
-    await update(ref(db, `bookings/${booking.id}`), {
-      endTime: newEnd.toISOString(),
-      expired: false,
-    });
-  }, []);
-
-  const completeBooking = useCallback(async (id, handlerName = currentUser || "unknown") => {
-    if (!id) return;
-    // move to history then remove booking
     try {
-      const snapshot = (await onValue(ref(db, `bookings/${id}`), () => {})); // noop to ensure path exists (we'll use get by reading once)
-    } catch (e) {
-      // ignore - we will read below via onValue subscription in main hook; simpler approach: read current bookings state
-    }
-    // Read booking from current local state
-    const b = bookings.find((x) => x.id === id);
-    if (!b) {
-      // fallback: just remove
       await remove(ref(db, `bookings/${id}`));
-      return;
+    } catch (e) {
+      console.error('removeBooking failed', e);
+      throw e;
     }
-    const historyNode = push(ref(db, "history"));
-    const historyPayload = {
-      ...b,
-      startTime: b.startTime ? b.startTime.toISOString() : null,
-      endTime: b.endTime ? b.endTime.toISOString() : null,
-      finishedAt: new Date().toISOString(),
-      handledBy: handlerName,
-    };
-    await set(ref(db, `history/${historyNode.key}`), historyPayload);
-    await remove(ref(db, `bookings/${id}`));
+  }, []);
+
+  const extendBooking = useCallback(async (bookingId, extraMinutes = 60) => {
+    if (!bookingId) return;
+    try {
+      const bRef = ref(db, `bookings/${bookingId}`);
+      // safe approach: fetch existing then update endTime
+      // but since we don't want extra read, compute new endTime from local state
+      const b = bookings.find((x) => x.id === bookingId);
+      if (!b || !b.endTime) return;
+      const newEnd = new Date(b.endTime.getTime() + extraMinutes * 60000);
+      await update(bRef, { endTime: newEnd.toISOString(), expired: false });
+    } catch (e) {
+      console.error('extendBooking failed', e);
+      throw e;
+    }
+  }, [bookings]);
+
+  const completeBooking = useCallback(async (bookingId) => {
+    if (!bookingId) return;
+    try {
+      // read booking from local state
+      const b = bookings.find((x) => x.id === bookingId);
+      if (!b) {
+        // fallback: try to read from DB then continue
+        console.warn('completeBooking: booking not found in memory', bookingId);
+      }
+
+      const toSave = {
+        ...(b || {}),
+        finishedAt: new Date().toISOString(),
+        completedBy: currentUser || null
+      };
+
+      // push to history
+      const histRef = ref(db, 'history');
+      await push(histRef, toSave);
+
+      // remove booking from bookings
+      await remove(ref(db, `bookings/${bookingId}`));
+    } catch (e) {
+      console.error('completeBooking failed', e);
+      throw e;
+    }
   }, [bookings, currentUser]);
 
   return {
     bookings,
     expiredBookings,
+    history,
     addBooking,
     removeBooking,
     extendBooking,
