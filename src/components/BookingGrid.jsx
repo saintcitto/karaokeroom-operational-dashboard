@@ -1,6 +1,7 @@
 // src/components/BookingGrid.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import BookingCard from "./BookingCard";
+import ExpiredList from "./ExpiredList";
 
 export default function BookingGrid({
   bookings = [],
@@ -9,43 +10,32 @@ export default function BookingGrid({
   onComplete = () => {},
   filter = "active",
 }) {
-  const [now, setNow] = useState(new Date());
-
-  // tick every second so countdowns & filters remain live
-  useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(t);
-  }, []);
+  // now computed when bookings change (useMemo dependency)
+  const now = useMemo(() => new Date(), [bookings]);
 
   const list = Array.isArray(bookings) ? bookings : [];
 
-  // normalize times once per render
-  const normalized = useMemo(
-    () =>
-      list
-        .map((b) => {
-          if (!b) return null;
-          const startTime = b.startTime ? (b.startTime instanceof Date ? b.startTime : new Date(b.startTime)) : null;
-          const endTime = b.endTime ? (b.endTime instanceof Date ? b.endTime : new Date(b.endTime)) : null;
-          return { ...b, startTime, endTime };
-        })
-        .filter(Boolean),
-    [list]
-  );
+  // add convenient computed fields per booking
+  const prepared = list.map((b) => {
+    const _start = b && b.startTime ? (b.startTime instanceof Date ? b.startTime : new Date(b.startTime)) : null;
+    const _end = b && b.endTime ? (b.endTime instanceof Date ? b.endTime : new Date(b.endTime)) : null;
+    const _diffMin = _end ? (_end.getTime() - now.getTime()) / 60000 : Number.POSITIVE_INFINITY;
+    return { ...b, _start, _end, _diffMin };
+  });
 
-  const filtered = useMemo(() => {
-    return normalized.filter((b) => {
-      if (!b.endTime) return false;
-      const diffMs = b.endTime.getTime() - now.getTime();
-      const diffMin = diffMs / 60000;
-      // expired: either flagged expired OR end <= now
-      if (filter === "expired") return !!b.expired || diffMin <= 0;
-      // ending: >0 and <= 30 minutes
-      if (filter === "ending") return diffMin > 0 && diffMin <= 30;
-      // active: > 0 and not expired
-      return diffMin > 0 && !b.expired;
-    });
-  }, [normalized, now, filter]);
+  // expired view (special: render table list)
+  if (filter === "expired") {
+    const expiredItems = prepared.filter((b) => b && (b.expired === true || (typeof b._diffMin === "number" && b._diffMin <= 0)));
+    return <ExpiredList items={expiredItems} />;
+  }
+
+  // for 'ending' and default 'active'
+  const filtered = prepared.filter((b) => {
+    if (!b || !b._end) return false;
+    if (filter === "ending") return b._diffMin > 0 && b._diffMin <= 30 && !b.expired;
+    // default active: not expired and still positive time left
+    return b._diffMin > 0 && !b.expired;
+  });
 
   if (filtered.length === 0) {
     return (
@@ -62,9 +52,9 @@ export default function BookingGrid({
         <BookingCard
           key={b.id}
           booking={b}
-          onCancel={onCancel}
-          onExtend={onExtend}
-          onComplete={onComplete}
+          onCancel={() => onCancel(b.id)}
+          onExtend={() => onExtend(b)}
+          onComplete={() => onComplete(b.id)}
         />
       ))}
     </div>
