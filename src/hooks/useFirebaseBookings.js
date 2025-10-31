@@ -1,170 +1,88 @@
-import { useState, useEffect, useRef, useCallback } from "react";
-import { db, ref, onValue, set, remove, update, push } from "../firebaseConfig";
-import { calculateTotalPriceWithPromo } from "../utils/helpers";
-import { PolySynth, Filter, LFO, Transport, start as ToneStart, context as ToneContext } from "tone";
-import useAuditTrail from "./useAuditTrail";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { db, ref, onValue, push, set, remove, update } from "../firebaseConfig";
 
-export default function useFirebaseBookings(currentUser = "Tidak Diketahui") {
+export default function useFirebaseBookings(currentUser = "") {
   const [bookings, setBookings] = useState([]);
   const [expiredBookings, setExpiredBookings] = useState([]);
-  const expireLock = useRef({});
-  const alarmRef = useRef(null);
-  const { logAction } = useAuditTrail(currentUser || "Tidak Diketahui");
+  const [isLoading, setIsLoading] = useState(true);
+  const expireLockRef = useRef({});
 
   useEffect(() => {
     const bookingsRef = ref(db, "bookings");
-    const unsub = onValue(bookingsRef, (snap) => {
-      const data = snap.val() || {};
-      const parsed = Object.entries(data).map(([id, v]) => ({
-        id,
-        ...v,
-        startTime: v.startTime ? new Date(v.startTime) : null,
-        endTime: v.endTime ? new Date(v.endTime) : null,
-      }));
-      setBookings(parsed);
+    const unsub = onValue(bookingsRef, (snapshot) => {
+      setIsLoading(false);
+      const data = snapshot.val() || {};
+      const arr = Object.entries(data).map(([id, v]) => {
+        return {
+          id,
+          ...v,
+          startTime: v.startTime ? new Date(v.startTime) : null,
+          endTime: v.endTime ? new Date(v.endTime) : null,
+        };
+      });
+      setBookings(arr);
+
+      // set expired list
+      const now = new Date();
+      const expired = arr.filter((b) => b.endTime && b.endTime <= now && !b.expired);
+      setExpiredBookings((prev) => {
+        // merge unique
+        const ids = new Set(prev.map((p) => p.id));
+        const merged = [...prev];
+        expired.forEach((e) => {
+          if (!ids.has(e.id)) merged.push({ ...e, expired: true });
+        });
+        return merged;
+      });
     });
+
     return () => unsub();
   }, []);
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const now = new Date();
-      const toExpire = bookings.filter(
-        (b) => !b.expired && b.endTime && b.endTime <= now && !expireLock.current[b.id]
-      );
-      toExpire.forEach((b) => markExpired(b));
-    }, 10000);
-    return () => clearInterval(interval);
-  }, [bookings]);
-
-  const markExpired = useCallback(async (booking) => {
-    if (!booking?.id || expireLock.current[booking.id]) return;
-    expireLock.current[booking.id] = true;
-    try {
-      await update(ref(db, "bookings/" + booking.id), { expired: true });
-      setExpiredBookings((prev) => {
-        if (prev.find((b) => b.id === booking.id)) return prev;
-        return [...prev, { ...booking, expired: true }];
-      });
-      await logAction("EXPIRE_BOOKING", { room: booking.room });
-      startAlarm();
-    } catch (err) {
-      console.warn("Gagal update expired:", err.message);
-      expireLock.current[booking.id] = false;
-    }
-  }, [logAction]);
-
-  const startAlarm = useCallback(async () => {
-    try {
-      await ToneStart();
-      if (ToneContext.state !== "running") await ToneContext.resume();
-      if (!alarmRef.current) {
-        const filter = new Filter(800, "lowpass").toDestination();
-        const synth = new PolySynth().connect(filter);
-        const lfo = new LFO("2n", 400, 1600).start();
-        lfo.connect(filter.frequency);
-        const playPattern = () => {
-          const t = ToneContext.currentTime + 0.1;
-          synth.triggerAttackRelease(["A5", "E6"], "8n", t);
-          synth.triggerAttackRelease(["C6", "G5"], "8n", t + 0.4);
-        };
-        Transport.scheduleRepeat(playPattern, "1.2s", "+0.1");
-        Transport.start("+0.1");
-        alarmRef.current = { synth, filter, lfo };
-      }
-    } catch (err) {
-      console.error("Alarm start error:", err);
-    }
-  }, []);
-
-  const stopAlarm = useCallback(() => {
-    try {
-      if (alarmRef.current) {
-        alarmRef.current.lfo.stop();
-        alarmRef.current.synth.dispose();
-        alarmRef.current.filter.dispose();
-        alarmRef.current = null;
-      }
-      Transport.stop();
-      Transport.cancel();
-    } catch (err) {
-      console.error("Alarm stop error:", err);
-    }
-  }, []);
-
   const addBooking = useCallback(async (booking) => {
-    try {
-      const { total, freeMinutes, promoNote } = calculateTotalPriceWithPromo(
-        new Date(booking.startTime),
-        booking.durationMinutes,
-        booking.people
-      );
-
-      const newBooking = {
-        ...booking,
-        cashier: currentUser || "Tidak Diketahui",
-        totalPrice: total,
-        freeMinutes,
-        promoNote,
-        expired: false,
-        startTime: booking.startTime instanceof Date ? booking.startTime.toISOString() : booking.startTime,
-        endTime: booking.endTime instanceof Date ? booking.endTime.toISOString() : booking.endTime,
-      };
-
-      const newRef = push(ref(db, "bookings"));
-      await set(newRef, newBooking);
-      await logAction("ADD_BOOKING", { room: newBooking.room, duration: booking.durationMinutes });
-    } catch (err) {
-      console.error("Gagal addBooking:", err);
-    }
-  }, [currentUser, logAction]);
+    if (!booking || !booking.room) throw new Error("Invalid booking");
+    const node = push(ref(db, "bookings"));
+    const id = node.key;
+    await set(node, {
+      ...booking,
+      createdBy: booking.cashier || booking.createdBy || currentUser || "Unknown",
+      expired: false,
+    });
+    return id;
+  }, [currentUser]);
 
   const removeBooking = useCallback(async (id) => {
-    try {
-      await remove(ref(db, "bookings/" + id));
-      setExpiredBookings((prev) => prev.filter((b) => b.id !== id));
-      await logAction("REMOVE_BOOKING", { bookingId: id });
-    } catch (err) {
-      console.error("Gagal removeBooking:", err);
-    }
-  }, [logAction]);
+    if (!id) return;
+    await remove(ref(db, `bookings/${id}`));
+    setExpiredBookings((prev) => prev.filter((b) => b.id !== id));
+  }, []);
 
-  const extendBooking = useCallback(async (booking) => {
-    if (!booking?.id) return;
-    try {
-      const start = new Date(booking.endTime);
-      const end = new Date(start.getTime() + booking.durationMinutes * 60000);
-      const updated = {
-        ...booking,
-        startTime: start.toISOString(),
-        endTime: end.toISOString(),
-        expired: false,
-      };
-      await set(ref(db, "bookings/" + booking.id), updated);
-      setExpiredBookings((prev) => prev.filter((b) => b.id !== booking.id));
-      await logAction("EXTEND_BOOKING", { room: booking.room, newEnd: end.toISOString() });
-    } catch (err) {
-      console.error("Gagal extendBooking:", err);
-    }
-  }, [logAction]);
+  const extendBooking = useCallback(async (booking, extraMinutes = 60) => {
+    if (!booking || !booking.id) return;
+    const newEnd = new Date(booking.endTime.getTime() + extraMinutes * 60000);
+    await update(ref(db, `bookings/${booking.id}`), {
+      endTime: newEnd.toISOString(),
+      expired: false,
+    });
+    setExpiredBookings((prev) => prev.filter((b) => b.id !== booking.id));
+  }, []);
 
   const completeBooking = useCallback(async (bookingId) => {
-    const booking = bookings.find((b) => b.id === bookingId);
-    if (!booking) return;
-    try {
-      const historyRef = push(ref(db, "history"));
-      await set(historyRef, {
-        ...booking,
-        finishedAt: new Date().toISOString(),
-        handledBy: currentUser || "Tidak Diketahui",
-      });
-      await remove(ref(db, "bookings/" + bookingId));
-      setExpiredBookings((prev) => prev.filter((b) => b.id !== bookingId));
-      await logAction("COMPLETE_BOOKING", { room: booking.room });
-    } catch (err) {
-      console.error("Gagal completeBooking:", err);
-    }
-  }, [bookings, currentUser, logAction]);
+    if (!bookingId) return;
+    // move to history
+    const snapshotRef = ref(db, `bookings/${bookingId}`);
+    // read current booking then push to history
+    // simplified: read via onValue once
+    await onValue(snapshotRef, async (snap) => {
+      const data = snap.val();
+      if (!data) return;
+      const histRef = push(ref(db, "history"));
+      const finishedAt = new Date().toISOString();
+      await set(histRef, { ...data, finishedAt });
+      await remove(snapshotRef);
+    }, { onlyOnce: true });
+    setExpiredBookings((prev) => prev.filter((b) => b.id !== bookingId));
+  }, []);
 
   return {
     bookings,
@@ -173,6 +91,6 @@ export default function useFirebaseBookings(currentUser = "Tidak Diketahui") {
     removeBooking,
     extendBooking,
     completeBooking,
-    stopAlarm,
+    isLoading,
   };
 }
