@@ -1,31 +1,25 @@
+// src/App.jsx (fragment / replace top-level)
 import React, { useState } from "react";
-import KTVErrorBoundary from "./components/KTVErrorBoundary";
-import SidebarForm from "./components/SidebarForm";
-import BookingGridHeader from "./components/BookingGridHeader";
 import BookingGrid from "./components/BookingGrid";
+import BookingGridHeader from "./components/BookingGridHeader";
+import SidebarForm from "./components/SidebarForm";
 import ExpiredModal from "./components/ExpiredModal";
 import useFirebaseBookings from "./hooks/useFirebaseBookings";
 import { ROOM_NAMES } from "./data/constants";
-import UserLogin from "./components/UserLogin";
+import KTVErrorBoundary from "./components/KTVErrorBoundary";
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState(localStorage.getItem("currentUser") || "");
+  const { bookings, expiredBookings, addBooking, removeBooking, extendBooking, completeBooking } = useFirebaseBookings(currentUser);
+
   const [filter, setFilter] = useState("active");
-  const [activeModal, setActiveModal] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [activeModal, setActiveModal] = useState(null);
 
-  const {
-    bookings,
-    expiredBookings,
-    addBooking,
-    removeBooking,
-    extendBooking,
-    completeBooking,
-  } = useFirebaseBookings(currentUser || "Tidak Diketahui");
-
-  const handleLogin = (userName) => {
-    localStorage.setItem("currentUser", userName);
-    setCurrentUser(userName);
+  const handleAddBooking = async (data) => {
+    setSaving(true);
+    await addBooking(data);
+    setSaving(false);
   };
 
   const handleLogout = () => {
@@ -33,76 +27,47 @@ export default function App() {
     setCurrentUser("");
   };
 
-  const handleAddBooking = async (data) => {
-    setSaving(true);
-    try {
-      await addBooking(data);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (!currentUser) {
-    return <UserLogin onLogin={handleLogin} />;
-  }
-
-  const activeRooms = bookings.map((b) => b.room);
-
   return (
     <KTVErrorBoundary>
-      <div className="flex flex-col md:flex-row h-screen bg-gray-900 text-white">
-        <aside className="w-full md:w-80 lg:w-72 h-auto md:h-screen bg-gray-900 shadow-lg overflow-y-auto p-6 border-r border-gray-800">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <div className="text-xs text-gray-400">Login sebagai:</div>
-              <div className="font-semibold text-pink-400">{currentUser}</div>
-            </div>
-            <button onClick={handleLogout} className="text-sm text-red-400 hover:text-red-500">Logout</button>
-          </div>
+      <div className="flex flex-col md:flex-row bg-gray-950 text-white min-h-screen overflow-hidden">
+        <SidebarForm
+          rooms={ROOM_NAMES}
+          activeRoomNames={bookings.map(b => b.room)}
+          onAddBooking={handleAddBooking}
+          currentUser={currentUser}
+          onLogout={handleLogout}
+          saving={saving}
+        />
 
-          <SidebarForm
-            rooms={ROOM_NAMES}
-            activeRoomNames={activeRooms}
-            onAddBooking={handleAddBooking}
-            currentUser={currentUser}
-            saving={saving}
-          />
-        </aside>
-
-        <main className="relative w-full md:w-2/3 lg:w-3/4 h-screen overflow-y-auto bg-gray-800/50 transition-all duration-300 ease-in-out">
+        <main className="flex-1 overflow-y-auto">
           <BookingGridHeader activeFilter={filter} onChange={setFilter} />
-          <div className="transition-all duration-500 ease-in-out p-6">
-            <BookingGrid
-              bookings={bookings}
-              onCancel={removeBooking}
-              onExtend={extendBooking}
-              onComplete={(id) => {
-                completeBooking(id);
-                setActiveModal(null);
-              }}
-              filter={filter}
-            />
-          </div>
+          <BookingGrid
+            bookings={bookings}
+            onCancel={removeBooking}
+            onExtend={(b) => extendBooking(b)}
+            onComplete={(id) => {
+              // forward to completeBooking (move to history)
+              completeBooking(id, currentUser);
+              setActiveModal(null);
+            }}
+            filter={filter}
+          />
         </main>
 
+        {/* expired modal: prefer show first expiredBookings[0] if expired */}
         {activeModal && (
           <ExpiredModal
             booking={activeModal}
-            onComplete={(id) => {
-              completeBooking(id);
-              setActiveModal(null);
-            }}
-            onClose={() => setActiveModal(null)}
+            onComplete={(id) => { completeBooking(id, currentUser); setActiveModal(null); }}
+            onCancel={() => setActiveModal(null)}
           />
         )}
 
-        {expiredBookings.length > 0 && !activeModal && (
+        {!activeModal && expiredBookings.length > 0 && (
           <ExpiredModal
             booking={expiredBookings[0]}
-            onComplete={(id) => {
-              completeBooking(id);
-            }}
-            onClose={() => {}}
+            onComplete={(id) => { completeBooking(id, currentUser); }}
+            onCancel={() => {}}
           />
         )}
       </div>
