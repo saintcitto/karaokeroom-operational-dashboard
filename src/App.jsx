@@ -1,20 +1,17 @@
 import React, { useState, useEffect } from "react";
-import KTVErrorBoundary from "./components/KTVErrorBoundary";
 import SidebarForm from "./components/SidebarForm";
 import BookingGrid from "./components/BookingGrid";
-import BookingGridHeader from "./components/BookingGridHeader";
 import ExpiredModal from "./components/ExpiredModal";
-import UserLogin from "./components/UserLogin";
 import useFirebaseBookings from "./hooks/useFirebaseBookings";
+import KTVErrorBoundary from "./components/KTVErrorBoundary";
+import UserLogin from "./components/UserLogin";
 import { ROOM_NAMES } from "./data/constants";
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState(() => localStorage.getItem("currentUser") || "");
-  const [filter, setFilter] = useState("active");
   const [saving, setSaving] = useState(false);
   const [activeModal, setActiveModal] = useState(null);
 
-  // hook firebase bookings
   const {
     bookings,
     expiredBookings,
@@ -22,7 +19,6 @@ export default function App() {
     removeBooking,
     extendBooking,
     completeBooking,
-    isLoading,
   } = useFirebaseBookings(currentUser);
 
   useEffect(() => {
@@ -30,14 +26,8 @@ export default function App() {
     else localStorage.removeItem("currentUser");
   }, [currentUser]);
 
-  // handle login from UserLogin (or quick user select)
-  const handleLogin = (username) => {
-    setCurrentUser(username);
-  };
-
-  const handleLogout = () => {
-    setCurrentUser("");
-  };
+  const handleLogin = (name) => setCurrentUser(name);
+  const handleLogout = () => setCurrentUser("");
 
   const handleAddBooking = async (data) => {
     setSaving(true);
@@ -48,7 +38,7 @@ export default function App() {
     }
   };
 
-  const activeRoomNames = Array.isArray(bookings) ? bookings.map((b) => b.room) : [];
+  const activeRoomNames = bookings.map((b) => b.room);
 
   if (!currentUser) {
     return <UserLogin onLogin={handleLogin} />;
@@ -57,16 +47,15 @@ export default function App() {
   return (
     <KTVErrorBoundary>
       <div className="flex flex-col md:flex-row bg-gray-950 text-white min-h-screen">
-        <aside className="w-full md:w-80 lg:w-72 h-screen flex flex-col bg-gray-900 p-6 border-r border-gray-800">
+        <aside className="w-full md:w-80 lg:w-72 h-screen flex flex-col bg-gray-900 border-r border-gray-800 p-6">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <div className="text-sm text-gray-300">Login sebagai:</div>
-              <div className="font-semibold text-pink-400">{currentUser || "Tidak Diketahui"}</div>
+              <div className="text-xs text-gray-400">Login sebagai:</div>
+              <div className="text-pink-400 font-semibold">{currentUser}</div>
             </div>
             <button
               onClick={handleLogout}
-              className="text-sm text-red-400 hover:text-red-500"
-              title="Logout"
+              className="text-sm text-red-400 hover:text-red-500 transition"
             >
               Logout
             </button>
@@ -82,33 +71,13 @@ export default function App() {
         </aside>
 
         <main className="flex-1 overflow-y-auto p-6">
-          <BookingGridHeader activeFilter={filter} onChange={setFilter} />
-          <div className="mt-6">
-            <BookingGrid
-              bookings={bookings}
-              filter={filter}
-              onCancel={removeBooking}
-              onExtend={(b) => {
-                extendBooking(b);
-              }}
-              onComplete={(id) => completeBooking(id)}
-            />
-          </div>
-        </main>
-
-        {activeModal && (
-          <ExpiredModal
-            booking={activeModal}
-            onExtend={(b) => {
-              extendBooking(b);
-              setActiveModal(null);
-            }}
-            onComplete={(id) => {
-              completeBooking(id);
-              setActiveModal(null);
-            }}
+          <BookingGrid
+            bookings={bookings}
+            onCancel={removeBooking}
+            onExtend={extendBooking}
+            onComplete={completeBooking}
           />
-        )}
+        </main>
 
         {expiredBookings.length > 0 && !activeModal && (
           <ExpiredModal
