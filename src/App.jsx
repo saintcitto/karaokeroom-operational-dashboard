@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import SidebarForm from "./components/SidebarForm";
 import BookingGrid from "./components/BookingGrid";
+import BookingGridHeader from "./components/BookingGridHeader";
 import ExpiredModal from "./components/ExpiredModal";
 import useFirebaseBookings from "./hooks/useFirebaseBookings";
 import KTVErrorBoundary from "./components/KTVErrorBoundary";
@@ -10,7 +11,7 @@ import { ROOM_NAMES } from "./data/constants";
 export default function App() {
   const [currentUser, setCurrentUser] = useState(() => localStorage.getItem("currentUser") || "");
   const [saving, setSaving] = useState(false);
-  const [activeModal, setActiveModal] = useState(null);
+  const [filter, setFilter] = useState("active"); // active | ending | expired
 
   const {
     bookings,
@@ -38,16 +39,12 @@ export default function App() {
     }
   };
 
-  const activeRoomNames = bookings.map((b) => b.room);
-
-  if (!currentUser) {
-    return <UserLogin onLogin={handleLogin} />;
-  }
+  if (!currentUser) return <UserLogin onLogin={handleLogin} />;
 
   return (
     <KTVErrorBoundary>
-      <div className="flex flex-col md:flex-row bg-gray-950 text-white min-h-screen">
-        <aside className="w-full md:w-80 lg:w-72 h-screen flex flex-col bg-gray-900 border-r border-gray-800 p-6">
+      <div className="flex flex-col md:flex-row min-h-screen bg-gray-900 text-white">
+        <aside className="w-full md:w-80 lg:w-72 bg-gray-900 border-r border-gray-800 p-6">
           <div className="flex items-center justify-between mb-4">
             <div>
               <div className="text-xs text-gray-400">Login sebagai:</div>
@@ -63,7 +60,7 @@ export default function App() {
 
           <SidebarForm
             rooms={ROOM_NAMES}
-            activeRoomNames={activeRoomNames}
+            activeRoomNames={bookings.map((b) => b.room)}
             onAddBooking={handleAddBooking}
             currentUser={currentUser}
             saving={saving}
@@ -71,25 +68,26 @@ export default function App() {
         </aside>
 
         <main className="flex-1 overflow-y-auto p-6">
-          <BookingGrid
-            bookings={bookings}
-            onCancel={removeBooking}
-            onExtend={extendBooking}
-            onComplete={completeBooking}
-          />
+          <div className="sticky top-0 z-20 bg-gray-900/80 backdrop-blur-sm py-4">
+            <BookingGridHeader activeFilter={filter} onChange={setFilter} />
+          </div>
+
+          <div className="mt-6">
+            <BookingGrid
+              bookings={bookings}
+              onCancel={removeBooking}
+              onExtend={extendBooking}
+              onComplete={completeBooking}
+              filter={filter}
+            />
+          </div>
         </main>
 
-        {expiredBookings.length > 0 && !activeModal && (
+        {expiredBookings.length > 0 && (
           <ExpiredModal
             booking={expiredBookings[0]}
-            onExtend={(b) => {
-              extendBooking(b);
-              setActiveModal(null);
-            }}
-            onComplete={(id) => {
-              completeBooking(id);
-              setActiveModal(null);
-            }}
+            onExtend={(b) => extendBooking(b)}
+            onComplete={(id) => completeBooking(id)}
           />
         )}
       </div>
