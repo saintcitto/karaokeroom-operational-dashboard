@@ -1,77 +1,94 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState } from "react";
 import { formatCurrency, formatTime } from "../utils/helpers";
 
-function secondsToHMS(sec) {
-  if (!Number.isFinite(sec)) sec = 0;
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  const s = Math.floor(sec % 60);
-  return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
-}
-
-export default function BookingCard({ booking = {}, onCancel = () => {}, onExtend = () => {}, onComplete = () => {} }) {
+export default function BookingCard({ booking, onCancel, onExtend, onComplete }) {
   const [remaining, setRemaining] = useState(0);
 
   useEffect(() => {
-    const compute = () => {
-      const now = new Date();
-      const end = booking.endTime ? new Date(booking.endTime) : null;
-      const sec = end ? Math.max(0, Math.floor((end.getTime() - now.getTime()) / 1000)) : 0;
-      setRemaining(sec);
-    };
-    compute();
-    const t = setInterval(compute, 1000);
-    return () => clearInterval(t);
+    const timer = setInterval(() => {
+      if (!booking.endTime) return;
+      const diff = new Date(booking.endTime) - new Date();
+      setRemaining(Math.max(0, Math.floor(diff / 1000)));
+    }, 1000);
+    return () => clearInterval(timer);
   }, [booking.endTime]);
 
-  const durationMinutes = booking.durationMinutes || (booking.startTime && booking.endTime ? Math.round((new Date(booking.endTime) - new Date(booking.startTime)) / 60000) : 0);
-
-  // pricing stored under booking.priceMeta if exists
-  const subtotal = useMemo(() => {
-    if (booking.priceMeta && typeof booking.priceMeta.total === "number") return booking.priceMeta.total;
-    return 0;
-  }, [booking.priceMeta]);
+  const isExpired = remaining <= 0;
+  const status =
+    isExpired
+      ? "Waktu Habis"
+      : remaining <= 10 * 60
+      ? "Akan Habis"
+      : "Aktif";
 
   return (
-    <div className="bg-gray-800 rounded-xl p-5 border border-gray-700 shadow-sm w-full max-w-xl">
-      <div className="flex justify-between items-start mb-3">
-        <div className="text-lg font-semibold">{booking.room || "—"}</div>
-        <div className="text-sm text-gray-300">{durationMinutes ? `${durationMinutes} menit` : ""}</div>
+    <div className="bg-gray-800 border border-gray-700 rounded-xl p-5 shadow-lg">
+      <div className="flex justify-between items-start mb-2">
+        <h3 className="text-xl font-bold">{booking.room}</h3>
+        <span
+          className={`px-3 py-1 text-xs font-semibold rounded-full ${
+            status === "Aktif"
+              ? "bg-green-700/30 text-green-400"
+              : status === "Akan Habis"
+              ? "bg-yellow-700/30 text-yellow-400"
+              : "bg-red-700/30 text-red-400"
+          }`}
+        >
+          {status}
+        </span>
       </div>
 
-      <div className="text-sm text-gray-400 mb-4">
-        <div>{booking.startTime ? formatTime(new Date(booking.startTime)) : "--"} — {booking.endTime ? formatTime(new Date(booking.endTime)) : "--"}</div>
-        <div className="mt-2">👥 {booking.people || 0} orang</div>
-        <div>Kasir: {booking.cashier || booking.createdBy || "Tidak Diketahui"}</div>
-        {booking.priceMeta?.freeMinutes > 0 && <div className="text-green-400 mt-2">Bonus: +{booking.priceMeta.freeMinutes} menit</div>}
+      <div className="text-gray-400 text-sm mb-2">
+        {formatTime(new Date(booking.startTime))} — {formatTime(new Date(booking.endTime))}
       </div>
 
-      <div className="mb-4">
-        <div className="text-sm text-gray-400 mb-2">Sisa Waktu:</div>
-        <div className="flex items-center gap-4">
-          <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
-            <div
-              style={{
-                width: `${Math.max(0, Math.min(100, ((durationMinutes + (booking.priceMeta?.freeMinutes || 0)) - Math.ceil(remaining / 60)) / (durationMinutes + (booking.priceMeta?.freeMinutes || 0)) * 100 || 0))}%`
-              }}
-              className="h-full bg-gradient-to-r from-green-400 to-green-600"
-            />
-          </div>
-          <div className="text-green-400 monospace text-sm">{secondsToHMS(remaining)}</div>
-        </div>
+      <div className="text-sm text-gray-400 mb-2">👥 {booking.people} orang</div>
+      <div className="text-sm text-gray-400 mb-2">Kasir: {booking.cashier}</div>
+      {booking.priceMeta?.freeMinutes > 0 && (
+        <div className="text-green-400 text-sm mb-2">Gratis {booking.priceMeta.freeMinutes} menit</div>
+      )}
+
+      <div className="flex justify-between items-center my-2">
+        <span className="text-xs text-gray-400">Sisa Waktu</span>
+        <span className={`font-mono ${isExpired ? "text-red-400" : "text-green-400"}`}>
+          {new Date(remaining * 1000).toISOString().substr(11, 8)}
+        </span>
       </div>
 
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mt-4">
-        <div>
-          <div className="text-xs text-gray-400">Subtotal:</div>
-          <div className="text-lg font-semibold text-green-400">{formatCurrency(subtotal)}</div>
-        </div>
+      <div className="text-sm text-gray-400">Subtotal:</div>
+      <div className="text-lg font-semibold text-green-400 mb-4">
+        {formatCurrency(booking.priceMeta?.total || 0)}
+      </div>
 
-        <div className="flex gap-3 ml-auto">
-          <button onClick={() => onExtend(booking)} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg">Perpanjang</button>
-          <button onClick={() => onComplete(booking.id)} className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg">Selesai</button>
-          <button onClick={() => onCancel(booking.id)} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg">Batalkan</button>
-        </div>
+      <div className="flex gap-3">
+        <button
+          onClick={() => onExtend(booking)}
+          disabled={!isExpired}
+          className={`px-4 py-2 rounded-lg text-sm font-semibold ${
+            isExpired
+              ? "bg-blue-600 hover:bg-blue-700"
+              : "bg-gray-700 text-gray-500 cursor-not-allowed"
+          }`}
+        >
+          Perpanjang
+        </button>
+        <button
+          onClick={() => onComplete(booking.id)}
+          disabled={!isExpired}
+          className={`px-4 py-2 rounded-lg text-sm font-semibold ${
+            isExpired
+              ? "bg-green-600 hover:bg-green-700"
+              : "bg-gray-700 text-gray-500 cursor-not-allowed"
+          }`}
+        >
+          Selesai
+        </button>
+        <button
+          onClick={() => onCancel(booking.id)}
+          className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-semibold"
+        >
+          Batalkan
+        </button>
       </div>
     </div>
   );
