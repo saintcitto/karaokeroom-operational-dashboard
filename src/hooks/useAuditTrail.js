@@ -1,20 +1,19 @@
 import { useCallback } from "react";
 import { db, ref, push, set } from "../firebaseConfig";
 
-export default function useAuditTrail(currentUser = "Unknown") {
+export default function useAuditTrail(currentUser = "Tidak Diketahui") {
   const logAction = useCallback(
     async (actionType, details = {}) => {
       try {
         const auditRef = push(ref(db, "auditTrail"));
         await set(auditRef, {
-          user: currentUser,
+          user: currentUser || "Tidak Diketahui",
           action: actionType,
           timestamp: new Date().toISOString(),
           details,
         });
-        console.log(`🧾 AuditTrail logged: ${actionType}`, details);
       } catch (err) {
-        console.error("Gagal mencatat audit trail:", err);
+        console.error("Audit trail gagal:", err);
       }
     },
     [currentUser]
