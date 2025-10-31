@@ -1,155 +1,119 @@
-import { useEffect, useMemo, useState, useRef, useCallback } from "react";
-import { db, ref, onValue, set, push, update, remove } from "../firebaseConfig";
+// src/hooks/useFirebaseBookings.js
+import { useEffect, useState, useCallback, useRef } from "react";
+import { db, ref, onValue, set, push, remove, update } from "../firebaseConfig";
 
-export default function useFirebaseBookings(currentUser = "Tidak Diketahui") {
+function parseBooking(id, raw) {
+  const startTime = raw.startTime ? new Date(raw.startTime) : null;
+  const endTime = raw.endTime ? new Date(raw.endTime) : null;
+  return {
+    id,
+    ...raw,
+    startTime,
+    endTime,
+    expired: !!raw.expired,
+  };
+}
+
+export default function useFirebaseBookings(currentUser = null) {
   const [bookings, setBookings] = useState([]);
   const [expiredBookings, setExpiredBookings] = useState([]);
-  const bookedRef = useRef({});
-  const expireLockRef = useRef({});
-  const expiredCacheRef = useRef({}); // cache local expired booking
-  const timerRef = useRef(null);
+  const pollingRef = useRef(null);
+  const lockRef = useRef({});
 
-  const normalize = (dataObj) => {
-    if (!dataObj) return [];
-    return Object.entries(dataObj).map(([id, v]) => {
-      const startTime = v.startTime ? new Date(v.startTime) : null;
-      const endTime = v.endTime ? new Date(v.endTime) : null;
-      return { id, ...v, startTime, endTime };
-    });
-  };
-
-  // Listener realtime bookings
+  // Listen realtime bookings node
   useEffect(() => {
     const bookingsRef = ref(db, "bookings");
     const unsub = onValue(bookingsRef, (snap) => {
       const val = snap.val() || {};
-      const arr = normalize(val).sort((a, b) => {
-        const aS = a.startTime ? a.startTime.getTime() : 0;
-        const bS = b.startTime ? b.startTime.getTime() : 0;
-        return aS - bS;
-      });
-
-      bookedRef.current = arr.reduce((acc, b) => {
-        acc[b.id] = b;
-        return acc;
-      }, {});
-
-      // cache expired bookings
-      arr.forEach((b) => {
-        if (b.expired === true) expiredCacheRef.current[b.id] = b;
-      });
-
+      const arr = Object.entries(val).map(([id, raw]) => parseBooking(id, raw));
       setBookings(arr);
-      updateExpiredList();
+      setExpiredBookings(arr.filter((b) => !!b.expired || (b.endTime && b.endTime <= new Date())));
     });
     return () => unsub();
   }, []);
 
-  // Timer: auto mark expired
+  // Poll to mark expired (server-side persistent mark)
   useEffect(() => {
-    function tick() {
-      const now = new Date();
-      const arr = Object.values(bookedRef.current);
-      arr.forEach((b) => {
+    const tick = async () => {
+      const now = Date.now();
+      bookings.forEach(async (b) => {
         if (!b || !b.endTime) return;
-        if (b.expired) return;
-        if (b.endTime.getTime() <= now.getTime()) {
-          if (!expireLockRef.current[b.id]) {
-            expireLockRef.current[b.id] = true;
-            update(ref(db, "bookings/" + b.id), { expired: true }).then(() => {
-              expiredCacheRef.current[b.id] = { ...b, expired: true };
-              updateExpiredList();
-            });
+        if ((b.endTime.getTime() <= now) && !b.expired && !lockRef.current[b.id]) {
+          // mark expired in DB so it appears in expired tab
+          lockRef.current[b.id] = true;
+          try {
+            await update(ref(db, `bookings/${b.id}`), { expired: true });
+          } catch (e) {
+            console.warn("Failed to mark expired:", b.id, e);
+            lockRef.current[b.id] = false;
           }
         }
       });
-    }
-    timerRef.current = setInterval(tick, 5000);
-    return () => clearInterval(timerRef.current);
-  }, []);
-
-  // Update expiredBookings state
-  const updateExpiredList = useCallback(() => {
-    const all = Object.values(bookedRef.current);
-    const localExpired = Object.values(expiredCacheRef.current);
-    const now = new Date();
-
-    const expiredList = all
-      .filter((b) => {
-        if (!b) return false;
-        const end = b.endTime ? new Date(b.endTime) : null;
-        if (!end) return false;
-        return b.expired === true || end <= now;
-      })
-      .concat(localExpired)
-      .reduce((acc, b) => {
-        acc[b.id] = b;
-        return acc;
-      }, {});
-
-    setExpiredBookings(Object.values(expiredList));
-  }, []);
-
-  // Booking operations
-  const addBooking = useCallback(
-    async (bookingData) => {
-      const p = push(ref(db, "bookings"));
-      await set(p, {
-        ...bookingData,
-        createdBy: currentUser || "Tidak Diketahui",
-        createdAt: new Date().toISOString(),
-        expired: false,
-      });
-      return p.key;
-    },
-    [currentUser]
-  );
-
-  const removeBooking = useCallback(async (bookingId) => {
-    if (!bookingId) return;
-    await remove(ref(db, "bookings/" + bookingId));
-    delete expiredCacheRef.current[bookingId];
-    updateExpiredList();
-  }, []);
-
-  const extendBooking = useCallback(async (bookingId, extraMinutes = 60) => {
-    if (!bookingId) return;
-    const b = bookedRef.current[bookingId];
-    if (!b || !b.endTime) return;
-    const newEnd = new Date(b.endTime.getTime() + extraMinutes * 60_000);
-    await update(ref(db, "bookings/" + bookingId), { endTime: newEnd.toISOString(), expired: false });
-    delete expiredCacheRef.current[bookingId];
-    updateExpiredList();
-  }, []);
-
-  const completeBooking = useCallback(
-    async (bookingId) => {
-      if (!bookingId) return;
-      const b = bookedRef.current[bookingId] || expiredCacheRef.current[bookingId];
-      const historyRef = push(ref(db, "history"));
-      const finishedAt = new Date().toISOString();
-      if (b) {
-        await set(historyRef, { ...b, finishedAt, movedBy: currentUser || "Tidak Diketahui" });
-      } else {
-        await set(historyRef, { id: bookingId, finishedAt, movedBy: currentUser || "Tidak Diketahui" });
-      }
-      await remove(ref(db, "bookings/" + bookingId));
-      delete expiredCacheRef.current[bookingId];
-      updateExpiredList();
-    },
-    [currentUser, updateExpiredList]
-  );
-
-  const sortedBookings = useMemo(() => {
-    return (bookings || []).slice().sort((a, b) => {
-      const aS = a.startTime ? a.startTime.getTime() : 0;
-      const bS = b.startTime ? b.startTime.getTime() : 0;
-      return aS - bS;
-    });
+    };
+    pollingRef.current = setInterval(tick, 5_000);
+    // run once immediately
+    tick();
+    return () => clearInterval(pollingRef.current);
   }, [bookings]);
 
+  const addBooking = useCallback(
+    async (payload) => {
+      // use push to generate key, keep structure consistent with other code
+      const node = push(ref(db, "bookings"));
+      const id = node.key;
+      const toSet = {
+        ...payload,
+        createdAt: new Date().toISOString(),
+      };
+      await set(ref(db, `bookings/${id}`), toSet);
+      return id;
+    },
+    []
+  );
+
+  const removeBooking = useCallback(async (id) => {
+    if (!id) return;
+    await remove(ref(db, `bookings/${id}`));
+  }, []);
+
+  const extendBooking = useCallback(async (booking, minutes = 60) => {
+    if (!booking || !booking.id) return;
+    const newEnd = new Date(booking.endTime.getTime() + minutes * 60 * 1000);
+    await update(ref(db, `bookings/${booking.id}`), {
+      endTime: newEnd.toISOString(),
+      expired: false,
+    });
+  }, []);
+
+  const completeBooking = useCallback(async (id, handlerName = currentUser || "unknown") => {
+    if (!id) return;
+    // move to history then remove booking
+    try {
+      const snapshot = (await onValue(ref(db, `bookings/${id}`), () => {})); // noop to ensure path exists (we'll use get by reading once)
+    } catch (e) {
+      // ignore - we will read below via onValue subscription in main hook; simpler approach: read current bookings state
+    }
+    // Read booking from current local state
+    const b = bookings.find((x) => x.id === id);
+    if (!b) {
+      // fallback: just remove
+      await remove(ref(db, `bookings/${id}`));
+      return;
+    }
+    const historyNode = push(ref(db, "history"));
+    const historyPayload = {
+      ...b,
+      startTime: b.startTime ? b.startTime.toISOString() : null,
+      endTime: b.endTime ? b.endTime.toISOString() : null,
+      finishedAt: new Date().toISOString(),
+      handledBy: handlerName,
+    };
+    await set(ref(db, `history/${historyNode.key}`), historyPayload);
+    await remove(ref(db, `bookings/${id}`));
+  }, [bookings, currentUser]);
+
   return {
-    bookings: sortedBookings,
+    bookings,
     expiredBookings,
     addBooking,
     removeBooking,
