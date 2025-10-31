@@ -9,13 +9,13 @@ import KTVErrorBoundary from "./components/KTVErrorBoundary";
 
 export default function App() {
   const {
-    bookings,
-    expiredBookings,
-    addBooking,
-    removeBooking,
-    extendBooking,
-    completeBooking
-  } = useFirebaseBookings();
+  bookings,
+  expiredBookings,
+  addBooking,
+  removeBooking,
+  extendBooking,
+  completeBooking,
+} = useFirebaseBookings(currentUser);
 
   const [filter, setFilter] = useState("active");
   const [saving, setSaving] = useState(false);
