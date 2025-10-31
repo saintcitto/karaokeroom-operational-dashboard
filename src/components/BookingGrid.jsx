@@ -1,46 +1,37 @@
-import React, { useState } from "react";
+import React from "react";
 import BookingCard from "./BookingCard";
-import BookingGridHeader from "./BookingGridHeader";
 
-export default function BookingGrid({
-  bookings = [],
-  onCancel = () => {},
-  pricing,
-  promotions,
-}) {
-  const [filter, setFilter] = useState("active");
+export default function BookingGrid({ bookings = [], onCancel, onExtend, onComplete, filter = "active" }) {
   const list = Array.isArray(bookings) ? bookings : [];
+  const now = new Date();
 
   const filtered = list.filter((b) => {
     if (!b || !b.endTime) return false;
-    const now = new Date();
     const end = new Date(b.endTime);
-    if (filter === "expired") return end <= now;
-    if (filter === "ending")
-      return end > now && end - now <= 30 * 60 * 1000;
-    return end > now;
+    if (filter === "expired") return end.getTime() <= now.getTime();
+    if (filter === "ending") return end.getTime() - now.getTime() <= 30 * 60 * 1000 && end.getTime() > now.getTime();
+    return end.getTime() > now.getTime();
   });
 
+  if (filtered.length === 0) {
+    return (
+      <div className="p-6 text-center text-gray-500">
+        Belum ada pemesanan aktif.
+      </div>
+    );
+  }
+
   return (
-    <div className="p-6">
-      <BookingGridHeader activeFilter={filter} onChange={setFilter} />
-      {filtered.length === 0 ? (
-        <p className="text-gray-500 text-center py-20">
-          Belum ada pemesanan aktif.
-        </p>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-          {filtered.map((b) => (
-            <BookingCard
-              key={b.id}
-              booking={b}
-              onCancel={onCancel}
-              pricing={pricing}
-              promotions={promotions}
-            />
-          ))}
-        </div>
-      )}
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6">
+      {filtered.map((b) => (
+        <BookingCard
+          key={b.id}
+          booking={b}
+          onCancel={onCancel}
+          onExtend={onExtend}
+          onComplete={onComplete}
+        />
+      ))}
     </div>
   );
 }
