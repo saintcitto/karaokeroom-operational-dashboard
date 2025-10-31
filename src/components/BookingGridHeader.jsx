@@ -8,21 +8,24 @@ export default function BookingGridHeader({ activeFilter = "active", onChange = 
   ];
 
   return (
-    <div className="flex items-center justify-between">
-      <div className="flex items-center gap-3">
-        {tabs.map((t) => (
+    <div className="flex gap-3 items-center">
+      {tabs.map((t) => {
+        const active = activeFilter === t.id;
+        return (
           <button
             key={t.id}
             onClick={() => onChange(t.id)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition ${
-              activeFilter === t.id ? "bg-gradient-to-r from-pink-600/30 to-purple-500/20 text-pink-400" : "bg-gray-800/40 text-gray-400"
+            className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition ${
+              active
+                ? "bg-gradient-to-r from-pink-600/30 to-purple-500/20 text-pink-300 shadow-sm"
+                : "bg-gray-800/40 text-gray-400 hover:bg-gray-800/60"
             }`}
           >
             <span>{t.icon}</span>
             <span>{t.label}</span>
           </button>
-        ))}
-      </div>
+        );
+      })}
     </div>
   );
 }
