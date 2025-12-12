@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+@theme {
+  /* Biarkan kosong untuk menggunakan default theme Tailwind v4 */
+}
+
+/* WAJIB: Ini untuk mengaktifkan Dark Mode saat ada class 'dark' di html */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Global styles */
+html,
+body,
+#root {
+  height: 100%;
+}
